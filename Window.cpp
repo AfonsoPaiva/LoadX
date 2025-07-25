@@ -4,15 +4,11 @@
 #include "window.h"
 #include <iostream>
 
-const unsigned int SCREEN_WIDTH = 800;
-const unsigned int SCREEN_HEIGHT = 600;
-
 static GLFWwindow* window = nullptr;
 
 void framebuffer_size_callback(GLFWwindow*, int width, int height) {
 	glViewport(0, 0, width, height);
 }
-
 
 void Window::Init()
 {
@@ -26,16 +22,30 @@ void Window::Init()
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // OS X compatibility
 #endif
 
-	//===GLFW Window Creation===
-	window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Modular Engine", NULL, NULL);
+	//===Get monitor info for windowed fullscreen===
+	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+	//===Set window hints for windowed fullscreen===
+	glfwWindowHint(GLFW_RED_BITS, mode->redBits);
+	glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
+	glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
+	glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+
+	//===GLFW Window Creation (windowed fullscreen)===
+	// Pass NULL as monitor parameter for windowed mode, but use full screen dimensions
+	window = glfwCreateWindow(800, 600, "Modular Engine", nullptr, nullptr);
 	if (!window) {
 		std::cerr << "Failed to create GLFW window" << std::endl;
 		glfwTerminate();
 		exit(-1);
 	}
 
-	glfwMakeContextCurrent(window);
+	// Position the window at the top-left corner to simulate fullscreen
+	glfwSetWindowPos(window, 0, 0);
 
+	glfwMakeContextCurrent(window);
+	glfwMaximizeWindow(window);
 
 	//===GLAD Initialization===
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -45,6 +55,9 @@ void Window::Init()
 	}
 
 	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+	// Don't capture cursor by default - let ImGui handle it
+	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 }
 
 void Window::Shutdown() {

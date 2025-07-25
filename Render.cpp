@@ -5,6 +5,7 @@
 
 // Initialize lighting with default values
 DirectionalLight dirLight = {
+    .enabled = true,
     .direction = glm::vec3(-0.2f, -1.0f, -0.3f),
     .ambient = glm::vec3(0.2f, 0.2f, 0.2f),
     .diffuse = glm::vec3(0.5f, 0.5f, 0.5f),
@@ -12,6 +13,7 @@ DirectionalLight dirLight = {
 };
 
 PointLight pointLight = {
+    .enabled = true,
     .position = glm::vec3(1.2f, 1.0f, 2.0f),
     .ambient = glm::vec3(0.05f, 0.05f, 0.05f),
     .diffuse = glm::vec3(0.8f, 0.8f, 0.8f),
@@ -22,6 +24,7 @@ PointLight pointLight = {
 };
 
 SpotLight spotLight = {
+    .enabled = true,
     .position = glm::vec3(0.0f, 0.0f, 3.0f),
     .direction = glm::vec3(0.0f, 0.0f, -1.0f),
     .ambient = glm::vec3(0.0f, 0.0f, 0.0f),
@@ -48,6 +51,11 @@ void Render::ClearScreen() {
 
 void Render::UpdateShaderLighting(unsigned int shaderProgram) {
     glUseProgram(shaderProgram);
+
+    // Light enable/disable uniforms
+    glUniform1i(glGetUniformLocation(shaderProgram, "dirLightEnabled"), dirLight.enabled);
+    glUniform1i(glGetUniformLocation(shaderProgram, "pointLightEnabled"), pointLight.enabled);
+    glUniform1i(glGetUniformLocation(shaderProgram, "spotLightEnabled"), spotLight.enabled);
 
     // Directional light
     glUniform3f(glGetUniformLocation(shaderProgram, "dirLight.direction"), dirLight.direction.x, dirLight.direction.y, dirLight.direction.z);

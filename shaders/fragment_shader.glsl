@@ -52,6 +52,11 @@ uniform PointLight pointLight;
 uniform SpotLight spotLight;
 uniform Material material;
 
+// Light enable/disable uniforms
+uniform bool dirLightEnabled;
+uniform bool pointLightEnabled;
+uniform bool spotLightEnabled;
+
 // Function prototypes
 vec3 CalcDirLight(DirectionalLight light, vec3 normal, vec3 viewDir);
 vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir);
@@ -63,12 +68,27 @@ void main()
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
     
+    vec3 result = vec3(0.0);
+    
     // Phase 1: directional lighting
-    vec3 result = CalcDirLight(dirLight, norm, viewDir);
+    if (dirLightEnabled) {
+        result += CalcDirLight(dirLight, norm, viewDir);
+    }
+    
     // Phase 2: point lights
-    result += CalcPointLight(pointLight, norm, FragPos, viewDir);    
+    if (pointLightEnabled) {
+        result += CalcPointLight(pointLight, norm, FragPos, viewDir);
+    }
+    
     // Phase 3: spot light
-    result += CalcSpotLight(spotLight, norm, FragPos, viewDir);    
+    if (spotLightEnabled) {
+        result += CalcSpotLight(spotLight, norm, FragPos, viewDir);
+    }
+    
+    // If no lights are enabled, use a basic ambient lighting
+    if (!dirLightEnabled && !pointLightEnabled && !spotLightEnabled) {
+        result = material.ambient * 0.1;
+    }
     
     FragColor = vec4(result, 1.0);
 }

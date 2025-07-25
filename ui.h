@@ -2,17 +2,19 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <string>
+#include "Transform.h"
 
 struct GLFWwindow;
 
 namespace UI {
     void Init(GLFWwindow* window);
     void BeginFrame();
-    void RenderUI();
+    void RenderUI(Transform& modelTransform);
     void EndFrame();
     void Shutdown();
 
-    // Add these to expose file path
+    // Expose variables for external access
     extern std::string selectedModelPath;
     extern bool modelSelected;
+    extern bool resetCameraPosition;
 }

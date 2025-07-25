@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 
 struct DirectionalLight {
+    bool enabled = true;
     glm::vec3 direction;
     glm::vec3 ambient;
     glm::vec3 diffuse;
@@ -9,6 +10,7 @@ struct DirectionalLight {
 };
 
 struct PointLight {
+    bool enabled = true;
     glm::vec3 position;
     glm::vec3 ambient;
     glm::vec3 diffuse;
@@ -20,6 +22,7 @@ struct PointLight {
 };
 
 struct SpotLight {
+    bool enabled = true;
     glm::vec3 position;
     glm::vec3 direction;
     glm::vec3 ambient;

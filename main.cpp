@@ -9,9 +9,53 @@
 #include "window.h"
 #include "ui.h"
 #include "model.h"
+#include "Camera.h"
+#include "Transform.h"
 
 Model* currentModel = nullptr;
 unsigned int shaderProgram;
+Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+Transform modelTransform;
+
+// Timing
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
+
+// Window dimensions - will be updated dynamically
+int SCR_WIDTH = 1920;
+int SCR_HEIGHT = 1080;
+
+// Mouse callback
+void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
+    camera.HandleMouseInput(window, xpos, ypos);
+}
+
+// Scroll callback
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    camera.ProcessMouseScroll(yoffset);
+}
+
+// Window resize callback
+void window_size_callback(GLFWwindow* window, int width, int height) {
+    SCR_WIDTH = width;
+    SCR_HEIGHT = height;
+    glViewport(0, 0, width, height);
+}
+
+// Process input
+void processInput(GLFWwindow* window) {
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, true);
+
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        camera.ProcessKeyboard(FORWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        camera.ProcessKeyboard(BACKWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        camera.ProcessKeyboard(LEFT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        camera.ProcessKeyboard(RIGHT, deltaTime);
+}
 
 std::string loadShaderFromFile(const std::string& path) {
     std::ifstream file(path);
@@ -78,7 +122,17 @@ unsigned int createShaderProgram(const std::string& vertexPath, const std::strin
 
 int main() {
     Window::Init();
-    UI::Init(Window::GetGLFWWindow());
+
+    // Set callbacks
+    GLFWwindow* window = Window::GetGLFWWindow();
+    glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetScrollCallback(window, scroll_callback);
+    glfwSetWindowSizeCallback(window, window_size_callback);
+
+    // Get actual window size
+    glfwGetWindowSize(window, &SCR_WIDTH, &SCR_HEIGHT);
+
+    UI::Init(window);
 
     glEnable(GL_DEPTH_TEST);
 
@@ -88,16 +142,21 @@ int main() {
         return -1;
     }
 
-    glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 3.0f),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f),
-        (float)800 / (float)600,
-        0.1f, 100.0f);
-
     while (!Window::ShouldClose()) {
+        // Calculate delta time
+        float currentFrame = glfwGetTime();
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        // Input
+        processInput(window);
         Window::PollEvents();
-        Window::ProcessInput();
+
+        // Handle camera reset
+        if (UI::resetCameraPosition) {
+            camera.ResetToDefault();
+            UI::resetCameraPosition = false;
+        }
 
         Render::ClearScreen();
 
@@ -105,6 +164,13 @@ int main() {
             if (currentModel) delete currentModel;
             try {
                 currentModel = new Model(UI::selectedModelPath);
+
+                // Reset transform and set reasonable default scale
+                modelTransform.position = glm::vec3(0.0f, 0.0f, 0.0f);
+                modelTransform.rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+                modelTransform.scale = glm::vec3(0.1f, 0.1f, 0.1f); // Start with small scale
+
+                std::cout << "Model loaded successfully: " << UI::selectedModelPath << std::endl;
             }
             catch (const std::exception& e) {
                 std::cerr << "Failed to load model: " << e.what() << std::endl;
@@ -115,17 +181,25 @@ int main() {
         if (currentModel) {
             glUseProgram(shaderProgram);
 
+            glm::mat4 model = modelTransform.GetModelMatrix();
+
+            // Camera/View transformation
+            glm::mat4 view = camera.GetViewMatrix();
+            glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+                (float)SCR_WIDTH / (float)SCR_HEIGHT,
+                0.1f, 100.0f);
+
             glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
             glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-            glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
-            glUniform3f(glGetUniformLocation(shaderProgram, "viewPos"), 0.0f, 0.0f, 3.0f);
+            glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
+            glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(camera.Position));
 
             Render::UpdateShaderLighting(shaderProgram);
             currentModel->Draw();
         }
 
         UI::BeginFrame();
-        UI::RenderUI();
+        UI::RenderUI(modelTransform);
         UI::EndFrame();
 
         Window::SwapBuffers();
