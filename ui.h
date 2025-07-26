@@ -3,13 +3,14 @@
 #include <GLFW/glfw3.h>
 #include <string>
 #include "Transform.h"
+#include "Model.h"
 
 struct GLFWwindow;
 
 namespace UI {
     void Init(GLFWwindow* window);
     void BeginFrame();
-    void RenderUI(Transform& modelTransform);
+    void RenderUI(Transform& modelTransform, Model* currentModel = nullptr);
     void EndFrame();
     void Shutdown();
 
@@ -17,4 +18,7 @@ namespace UI {
     extern std::string selectedModelPath;
     extern bool modelSelected;
     extern bool resetCameraPosition;
+    extern bool textureUpdated;
+    extern bool cameraMovementEnabled;
+    extern bool takeScreenshot;
 }

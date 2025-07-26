@@ -8,19 +8,70 @@
 #include <glm/gtc/type_ptr.hpp>  
 #include <assimp/Importer.hpp>      
 
-
-
-unsigned int TextureFromFile(const char* path, const std::string& directory);
 std::vector<Texture> Model::textures_loaded;
-
 
 Model::Model(const std::string& path) {
     loadModel(path);
 }
 
-void Model::Draw() {
+void Model::Draw(unsigned int shaderProgram) {
     for (unsigned int i = 0; i < meshes.size(); i++)
-        meshes[i].Draw();
+        meshes[i].Draw(shaderProgram);
+}
+
+void Model::AddCustomTexture(const std::string& texturePath, const std::string& type) {
+    Texture texture;
+    texture.id = TextureFromFile(texturePath.c_str(), "", false);
+    texture.type = type;
+    texture.path = texturePath;
+
+    if (type == "texture_diffuse") {
+        customTextures.diffuse.push_back(texture);
+    }
+    else if (type == "texture_specular") {
+        customTextures.specular.push_back(texture);
+    }
+    else if (type == "texture_normal") {
+        customTextures.normal.push_back(texture);
+    }
+    else if (type == "texture_height") {
+        customTextures.height.push_back(texture);
+    }
+    else if (type == "texture_emission") {
+        customTextures.emission.push_back(texture);
+    }
+    else if (type == "texture_roughness") {
+        customTextures.roughness.push_back(texture);
+    }
+    else if (type == "texture_metallic") {
+        customTextures.metallic.push_back(texture);
+    }
+    else if (type == "texture_ao") {
+        customTextures.ao.push_back(texture);
+    }
+
+    // Add custom textures to all meshes
+    for (auto& mesh : meshes) {
+        // Remove existing textures of this type
+        mesh.textures.erase(
+            std::remove_if(mesh.textures.begin(), mesh.textures.end(),
+                [&type](const Texture& t) { return t.type == type; }),
+            mesh.textures.end());
+
+        // Add the new texture
+        mesh.textures.push_back(texture);
+    }
+}
+
+void Model::ClearCustomTextures() {
+    customTextures.diffuse.clear();
+    customTextures.specular.clear();
+    customTextures.normal.clear();
+    customTextures.height.clear();
+    customTextures.emission.clear();
+    customTextures.roughness.clear();
+    customTextures.metallic.clear();
+    customTextures.ao.clear();
 }
 
 void Model::loadModel(const std::string& path) {
@@ -28,7 +79,8 @@ void Model::loadModel(const std::string& path) {
     const aiScene* scene = importer.ReadFile(path,
         aiProcess_Triangulate |
         aiProcess_FlipUVs |
-        aiProcess_CalcTangentSpace);
+        aiProcess_CalcTangentSpace |
+        aiProcess_GenNormals);
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
         std::cerr << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
@@ -58,6 +110,7 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
     // Process vertices
     for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
         Vertex vertex;
+
         // Process vertex positions, normals and texture coordinates
         glm::vec3 vector;
         vector.x = mesh->mVertices[i].x;
@@ -65,10 +118,12 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
         vector.z = mesh->mVertices[i].z;
         vertex.Position = vector;
 
-        vector.x = mesh->mNormals[i].x;
-        vector.y = mesh->mNormals[i].y;
-        vector.z = mesh->mNormals[i].z;
-        vertex.Normal = vector;
+        if (mesh->HasNormals()) {
+            vector.x = mesh->mNormals[i].x;
+            vector.y = mesh->mNormals[i].y;
+            vector.z = mesh->mNormals[i].z;
+            vertex.Normal = vector;
+        }
 
         if (mesh->mTextureCoords[0]) {
             glm::vec2 vec;
@@ -78,6 +133,20 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
         }
         else {
             vertex.TexCoords = glm::vec2(0.0f, 0.0f);
+        }
+
+        // Tangent
+        if (mesh->HasTangentsAndBitangents()) {
+            vector.x = mesh->mTangents[i].x;
+            vector.y = mesh->mTangents[i].y;
+            vector.z = mesh->mTangents[i].z;
+            vertex.Tangent = vector;
+
+            // Bitangent
+            vector.x = mesh->mBitangents[i].x;
+            vector.y = mesh->mBitangents[i].y;
+            vector.z = mesh->mBitangents[i].z;
+            vertex.Bitangent = vector;
         }
 
         vertices.push_back(vertex);
@@ -93,12 +162,31 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
     // Process material
     if (mesh->mMaterialIndex >= 0) {
         aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
-        std::vector<Texture> diffuseMaps = loadMaterialTextures(
-            material, aiTextureType_DIFFUSE, "texture_diffuse");
+
+        // Load different texture types
+        std::vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
         textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
-        std::vector<Texture> specularMaps = loadMaterialTextures(
-            material, aiTextureType_SPECULAR, "texture_specular");
+
+        std::vector<Texture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular");
         textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
+
+        std::vector<Texture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal");
+        textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
+
+        std::vector<Texture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height");
+        textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
+
+        std::vector<Texture> emissionMaps = loadMaterialTextures(material, aiTextureType_EMISSIVE, "texture_emission");
+        textures.insert(textures.end(), emissionMaps.begin(), emissionMaps.end());
+
+        std::vector<Texture> roughnessMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE_ROUGHNESS, "texture_roughness");
+        textures.insert(textures.end(), roughnessMaps.begin(), roughnessMaps.end());
+
+        std::vector<Texture> metallicMaps = loadMaterialTextures(material, aiTextureType_METALNESS, "texture_metallic");
+        textures.insert(textures.end(), metallicMaps.begin(), metallicMaps.end());
+
+        std::vector<Texture> aoMaps = loadMaterialTextures(material, aiTextureType_AMBIENT_OCCLUSION, "texture_ao");
+        textures.insert(textures.end(), aoMaps.begin(), aoMaps.end());
     }
 
     return Mesh(vertices, indices, textures);
@@ -129,9 +217,11 @@ std::vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType 
     return textures;
 }
 
-unsigned int TextureFromFile(const char* path, const std::string& directory) {
+unsigned int Model::TextureFromFile(const char* path, const std::string& directory, bool gamma) {
     std::string filename = std::string(path);
-    filename = directory + '/' + filename;
+    if (!directory.empty()) {
+        filename = directory + '/' + filename;
+    }
 
     unsigned int textureID;
     glGenTextures(1, &textureID);
@@ -159,7 +249,7 @@ unsigned int TextureFromFile(const char* path, const std::string& directory) {
         stbi_image_free(data);
     }
     else {
-        std::cerr << "Texture failed to load at path: " << path << std::endl;
+        std::cerr << "Texture failed to load at path: " << filename << std::endl;
         stbi_image_free(data);
     }
 

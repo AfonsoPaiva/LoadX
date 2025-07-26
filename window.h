@@ -10,5 +10,5 @@ namespace Window {
     void ProcessInput();
     bool ShouldClose();
     GLFWwindow* GetGLFWWindow();
-
+    void GetWindowSize(int& width, int& height);
 }

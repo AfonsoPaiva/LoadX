@@ -11,10 +11,11 @@
 #include "model.h"
 #include "Camera.h"
 #include "Transform.h"
+#include "Screenshot.h"
 
 Model* currentModel = nullptr;
 unsigned int shaderProgram;
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+Camera camera(glm::vec3(0.0f, 0.0f, 5.0f));
 Transform modelTransform;
 
 // Timing
@@ -27,12 +28,16 @@ int SCR_HEIGHT = 1080;
 
 // Mouse callback
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
-    camera.HandleMouseInput(window, xpos, ypos);
+    if (UI::cameraMovementEnabled) {
+        camera.HandleMouseInput(window, xpos, ypos);
+    }
 }
 
 // Scroll callback
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
-    camera.ProcessMouseScroll(yoffset);
+    if (UI::cameraMovementEnabled) {
+        camera.ProcessMouseScroll(yoffset);
+    }
 }
 
 // Window resize callback
@@ -47,14 +52,25 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        camera.ProcessKeyboard(RIGHT, deltaTime);
+    // Only process camera movement if enabled
+    if (UI::cameraMovementEnabled) {
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            camera.ProcessKeyboard(RIGHT, deltaTime);
+    }
+
+    // Screenshot hotkey (F12)
+    static bool f12WasPressed = false;
+    bool f12IsPressed = (glfwGetKey(window, GLFW_KEY_F12) == GLFW_PRESS);
+    if (f12IsPressed && !f12WasPressed) {
+        UI::takeScreenshot = true;
+    }
+    f12WasPressed = f12IsPressed;
 }
 
 std::string loadShaderFromFile(const std::string& path) {
@@ -120,6 +136,28 @@ unsigned int createShaderProgram(const std::string& vertexPath, const std::strin
     return program;
 }
 
+void renderScene() {
+    if (currentModel) {
+        glUseProgram(shaderProgram);
+
+        glm::mat4 model = modelTransform.GetModelMatrix();
+
+        // Camera/View transformation
+        glm::mat4 view = camera.GetViewMatrix();
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+            (float)SCR_WIDTH / (float)SCR_HEIGHT,
+            0.1f, 100.0f);
+
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
+        glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(camera.Position));
+
+        Render::UpdateShaderLighting(shaderProgram);
+        currentModel->Draw(shaderProgram);
+    }
+}
+
 int main() {
     Window::Init();
 
@@ -130,7 +168,7 @@ int main() {
     glfwSetWindowSizeCallback(window, window_size_callback);
 
     // Get actual window size
-    glfwGetWindowSize(window, &SCR_WIDTH, &SCR_HEIGHT);
+    Window::GetWindowSize(SCR_WIDTH, SCR_HEIGHT);
 
     UI::Init(window);
 
@@ -158,17 +196,16 @@ int main() {
             UI::resetCameraPosition = false;
         }
 
-        Render::ClearScreen();
-
+        // Handle model loading
         if (UI::modelSelected) {
             if (currentModel) delete currentModel;
             try {
                 currentModel = new Model(UI::selectedModelPath);
 
-                // Reset transform and set reasonable default scale
+                // Reset transform and set reasonable default scale - centered properly
                 modelTransform.position = glm::vec3(0.0f, 0.0f, 0.0f);
                 modelTransform.rotation = glm::vec3(0.0f, 0.0f, 0.0f);
-                modelTransform.scale = glm::vec3(0.1f, 0.1f, 0.1f); // Start with small scale
+                modelTransform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
                 std::cout << "Model loaded successfully: " << UI::selectedModelPath << std::endl;
             }
@@ -178,28 +215,26 @@ int main() {
             UI::modelSelected = false;
         }
 
-        if (currentModel) {
-            glUseProgram(shaderProgram);
+        // Handle screenshot
+        if (UI::takeScreenshot) {
+            // Clear screen and render scene without UI
+            Render::ClearScreen();
+            renderScene();
 
-            glm::mat4 model = modelTransform.GetModelMatrix();
+            // Take screenshot before rendering UI
+            std::string filename = Screenshot::GenerateScreenshotFilename();
+            Screenshot::SaveScreenshot(filename, SCR_WIDTH, SCR_HEIGHT);
 
-            // Camera/View transformation
-            glm::mat4 view = camera.GetViewMatrix();
-            glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
-                (float)SCR_WIDTH / (float)SCR_HEIGHT,
-                0.1f, 100.0f);
-
-            glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
-            glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-            glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
-            glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(camera.Position));
-
-            Render::UpdateShaderLighting(shaderProgram);
-            currentModel->Draw();
+            UI::takeScreenshot = false;
         }
 
+        // Normal rendering
+        Render::ClearScreen();
+        renderScene();
+
+        // Render UI
         UI::BeginFrame();
-        UI::RenderUI(modelTransform);
+        UI::RenderUI(modelTransform, currentModel);
         UI::EndFrame();
 
         Window::SwapBuffers();

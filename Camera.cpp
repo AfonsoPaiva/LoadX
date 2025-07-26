@@ -2,7 +2,7 @@
 #include <algorithm>
 
 Camera::Camera(glm::vec3 position, glm::vec3 up, float yaw, float pitch)
-    : Front(glm::vec3(0.0f, 0.0f, -1.0f)), MovementSpeed(SPEED), MouseSensitivity(SENSITIVITY), Zoom(ZOOM), firstMouse(true), lastX(400.0f), lastY(300.0f) {
+    : Front(glm::vec3(0.0f, 0.0f, -1.0f)), MovementSpeed(SPEED), MouseSensitivity(SENSITIVITY), Zoom(ZOOM), firstMouse(true), lastX(960.0f), lastY(540.0f) {
     Position = position;
     WorldUp = up;
     Yaw = yaw;
@@ -73,7 +73,7 @@ void Camera::HandleMouseInput(GLFWwindow* window, double xpos, double ypos) {
 }
 
 void Camera::ResetToDefault() {
-    Position = glm::vec3(0.0f, 0.0f, 3.0f);
+    Position = glm::vec3(0.0f, 0.0f, 5.0f);
     Yaw = YAW;
     Pitch = PITCH;
     Zoom = ZOOM;

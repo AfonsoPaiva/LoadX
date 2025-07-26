@@ -15,6 +15,9 @@ namespace UI {
     std::string selectedModelPath;
     bool modelSelected = false;
     bool resetCameraPosition = false;
+    bool textureUpdated = false;
+    bool cameraMovementEnabled = false;
+    bool takeScreenshot = false;
 
     void Init(GLFWwindow* window) {
         IMGUI_CHECKVERSION();
@@ -42,11 +45,21 @@ namespace UI {
         ImGui::DestroyContext();
     }
 
-    void RenderUI(Transform& modelTransform) {
-        // Model loading window
-        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(300, 150), ImGuiCond_Once);
-        ImGui::Begin("Model Loader");
+    void RenderUI(Transform& modelTransform, Model* currentModel) {
+        // Get current viewport size
+        ImGuiIO& io = ImGui::GetIO();
+        float screenWidth = io.DisplaySize.x;
+        float screenHeight = io.DisplaySize.y;
+
+        const float windowPadding = 10.0f;
+        const float leftColumnWidth = 300.0f;
+        const float middleColumnWidth = 400.0f;
+        const float rightColumnWidth = 350.0f;
+
+        // Model loading window - Sticky to top-left
+        ImGui::SetNextWindowPos(ImVec2(windowPadding, windowPadding), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(leftColumnWidth, 180), ImGuiCond_Always);
+        ImGui::Begin("Model Loader", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
         if (ImGui::Button("Open File Dialog"))
             ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose Model File", ".obj,.fbx,.gltf,.glb,.3ds,.dae,.blend,.x3d,.ply,.stl");
@@ -60,15 +73,60 @@ namespace UI {
         }
 
         if (!selectedModelPath.empty()) {
-            ImGui::Text("Loaded: %s", selectedModelPath.c_str());
+            ImGui::TextWrapped("Loaded: %s", selectedModelPath.c_str());
         }
 
         ImGui::End();
 
-        // Object Transform Controls
-        ImGui::SetNextWindowPos(ImVec2(10, 170), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(300, 350), ImGuiCond_Once);
-        ImGui::Begin("Object Transform");
+        // Camera Controls - Sticky below model loader (left column)
+        ImGui::SetNextWindowPos(ImVec2(windowPadding, 200), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(leftColumnWidth, 200), ImGuiCond_Always);
+        ImGui::Begin("Camera Controls", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+
+        // Camera movement toggle button
+        if (cameraMovementEnabled) {
+            if (ImGui::Button("Disable Camera Movement", ImVec2(-1, 30))) {
+                cameraMovementEnabled = false;
+            }
+            ImGui::TextColored(ImVec4(0, 1, 0, 1), "Camera Movement: ENABLED");
+        }
+        else {
+            if (ImGui::Button("Enable Camera Movement", ImVec2(-1, 30))) {
+                cameraMovementEnabled = true;
+            }
+            ImGui::TextColored(ImVec4(1, 0, 0, 1), "Camera Movement: DISABLED");
+        }
+
+        ImGui::Separator();
+
+        // Screenshot button
+        if (ImGui::Button("Take Screenshot", ImVec2(-1, 35))) {
+            takeScreenshot = true;
+        }
+
+        static std::string lastScreenshotPath = "";
+        if (!lastScreenshotPath.empty()) {
+            ImGui::TextWrapped("Last screenshot: %s", lastScreenshotPath.c_str());
+        }
+
+        ImGui::Separator();
+
+        ImGui::Text("Controls (when enabled):");
+        ImGui::BulletText("WASD - Move camera");
+        ImGui::BulletText("Mouse + Left Click - Look around");
+        ImGui::BulletText("Scroll - Zoom in/out");
+
+        if (ImGui::Button("Reset Camera Position")) {
+            resetCameraPosition = true;
+        }
+
+        ImGui::End();
+
+        // Object Transform Controls - Sticky below camera controls (left column)
+        float transformWindowHeight = screenHeight - 420; // Adjusted for new camera controls height
+        ImGui::SetNextWindowPos(ImVec2(windowPadding, 410), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(leftColumnWidth, transformWindowHeight), ImGuiCond_Always);
+        ImGui::Begin("Object Transform", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
         ImGui::Text("Position");
         ImGui::SliderFloat("X##pos", &modelTransform.position.x, -10.0f, 10.0f);
@@ -102,8 +160,8 @@ namespace UI {
         if (ImGui::Button("Reset Transform")) {
             modelTransform.position = glm::vec3(0.0f, 0.0f, 0.0f);
             modelTransform.rotation = glm::vec3(0.0f, 0.0f, 0.0f);
-            modelTransform.scale = glm::vec3(0.1f, 0.1f, 0.1f);
-            uniformScale = 0.1f;
+            modelTransform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
+            uniformScale = 1.0f;
         }
 
         ImGui::SameLine();
@@ -115,10 +173,111 @@ namespace UI {
 
         ImGui::End();
 
-        // Lighting controls window
-        ImGui::SetNextWindowPos(ImVec2(320, 10), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(350, 600), ImGuiCond_Once);
-        ImGui::Begin("Lighting Controls");
+        // Texture Management Window - Middle column (only show if model is loaded)
+        if (currentModel) {
+            float middleColumnX = leftColumnWidth + (2 * windowPadding);
+            float textureWindowHeight = screenHeight - (2 * windowPadding);
+
+            ImGui::SetNextWindowPos(ImVec2(middleColumnX, windowPadding), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(middleColumnWidth, textureWindowHeight), ImGuiCond_Always);
+            ImGui::Begin("Texture Manager", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+
+            ImGui::Text("Custom Texture Loading");
+            ImGui::Separator();
+
+            // Helper lambda for texture loading buttons
+            auto CreateTextureLoadButton = [&](const char* label, const char* dialogKey, const char* textureType) {
+                if (ImGui::Button(label, ImVec2(-1, 25))) {
+                    ImGuiFileDialog::Instance()->OpenDialog(dialogKey, "Choose Texture", ".png,.jpg,.jpeg,.tga,.bmp,.hdr");
+                }
+
+                if (ImGuiFileDialog::Instance()->Display(dialogKey)) {
+                    if (ImGuiFileDialog::Instance()->IsOk()) {
+                        std::string texturePath = ImGuiFileDialog::Instance()->GetFilePathName();
+                        currentModel->AddCustomTexture(texturePath, textureType);
+                        textureUpdated = true;
+                    }
+                    ImGuiFileDialog::Instance()->Close();
+                }
+                };
+
+            // Diffuse/Albedo
+            ImGui::Text("Diffuse/Albedo Map:");
+            CreateTextureLoadButton("Load Diffuse", "DiffuseTexture", "texture_diffuse");
+
+            ImGui::Separator();
+
+            // Specular
+            ImGui::Text("Specular Map:");
+            CreateTextureLoadButton("Load Specular", "SpecularTexture", "texture_specular");
+
+            ImGui::Separator();
+
+            // Normal
+            ImGui::Text("Normal Map:");
+            CreateTextureLoadButton("Load Normal", "NormalTexture", "texture_normal");
+
+            ImGui::Separator();
+
+            // Height/Displacement
+            ImGui::Text("Height/Displacement Map:");
+            CreateTextureLoadButton("Load Height", "HeightTexture", "texture_height");
+
+            ImGui::Separator();
+
+            // Emission
+            ImGui::Text("Emission Map:");
+            CreateTextureLoadButton("Load Emission", "EmissionTexture", "texture_emission");
+
+            ImGui::Separator();
+
+            // Roughness
+            ImGui::Text("Roughness Map:");
+            CreateTextureLoadButton("Load Roughness", "RoughnessTexture", "texture_roughness");
+
+            ImGui::Separator();
+
+            // Metallic
+            ImGui::Text("Metallic Map:");
+            CreateTextureLoadButton("Load Metallic", "MetallicTexture", "texture_metallic");
+
+            ImGui::Separator();
+
+            // Ambient Occlusion
+            ImGui::Text("Ambient Occlusion Map:");
+            CreateTextureLoadButton("Load AO", "AOTexture", "texture_ao");
+
+            ImGui::Separator();
+
+            if (ImGui::Button("Clear All Custom Textures", ImVec2(-1, 30))) {
+                currentModel->ClearCustomTextures();
+                textureUpdated = true;
+            }
+
+            // Display current textures info
+            ImGui::Separator();
+            ImGui::Text("Current Material Textures:");
+            MaterialTextures matTextures = currentModel->GetMaterialTextures();
+
+            if (!matTextures.diffuse.empty()) ImGui::BulletText("Diffuse: %zu texture(s)", matTextures.diffuse.size());
+            if (!matTextures.specular.empty()) ImGui::BulletText("Specular: %zu texture(s)", matTextures.specular.size());
+            if (!matTextures.normal.empty()) ImGui::BulletText("Normal: %zu texture(s)", matTextures.normal.size());
+            if (!matTextures.height.empty()) ImGui::BulletText("Height: %zu texture(s)", matTextures.height.size());
+            if (!matTextures.emission.empty()) ImGui::BulletText("Emission: %zu texture(s)", matTextures.emission.size());
+            if (!matTextures.roughness.empty()) ImGui::BulletText("Roughness: %zu texture(s)", matTextures.roughness.size());
+            if (!matTextures.metallic.empty()) ImGui::BulletText("Metallic: %zu texture(s)", matTextures.metallic.size());
+            if (!matTextures.ao.empty()) ImGui::BulletText("AO: %zu texture(s)", matTextures.ao.size());
+
+            ImGui::End();
+        }
+
+        // Lighting Controls Window - Sticky to right side of screen
+        float rightColumnX = screenWidth - rightColumnWidth - windowPadding;
+        float lightingWindowHeight = screenHeight - (2 * windowPadding);
+
+        ImGui::SetNextWindowPos(ImVec2(rightColumnX, windowPadding), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(rightColumnWidth, lightingWindowHeight), ImGuiCond_Always);
+        ImGui::Begin("Lighting Controls", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
         if (ImGui::CollapsingHeader("Directional Light", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Checkbox("Enable##dir", &dirLight.enabled);
@@ -175,24 +334,42 @@ namespace UI {
             ImGui::SliderFloat("Shininess", &material.shininess, 1.0f, 256.0f);
         }
 
-        ImGui::End();
+        // Add lighting presets section
+        if (ImGui::CollapsingHeader("Lighting Presets")) {
+            if (ImGui::Button("Sunny Day", ImVec2(-1, 25))) {
+                dirLight.direction = glm::vec3(-0.2f, -1.0f, -0.3f);
+                dirLight.ambient = glm::vec3(0.3f, 0.3f, 0.3f);
+                dirLight.diffuse = glm::vec3(0.8f, 0.8f, 0.8f);
+                dirLight.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+                dirLight.enabled = true;
+            }
 
-        // Camera Controls Info
-        ImGui::SetNextWindowPos(ImVec2(680, 10), ImGuiCond_Once);
-        ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiCond_Once);
-        ImGui::Begin("Camera Controls");
+            if (ImGui::Button("Night Scene", ImVec2(-1, 25))) {
+                dirLight.ambient = glm::vec3(0.05f, 0.05f, 0.1f);
+                dirLight.diffuse = glm::vec3(0.1f, 0.1f, 0.2f);
+                dirLight.specular = glm::vec3(0.2f, 0.2f, 0.3f);
+                pointLight.ambient = glm::vec3(0.1f, 0.1f, 0.05f);
+                pointLight.diffuse = glm::vec3(0.8f, 0.6f, 0.2f);
+                pointLight.enabled = true;
+            }
 
-        ImGui::Text("Controls:");
-        ImGui::BulletText("WASD - Move camera");
-        ImGui::BulletText("Mouse + Left Click - Look around");
-        ImGui::BulletText("Scroll - Zoom in/out");
-
-        ImGui::Separator();
-
-        if (ImGui::Button("Reset Camera Position")) {
-            resetCameraPosition = true;
+            if (ImGui::Button("Studio Lighting", ImVec2(-1, 25))) {
+                dirLight.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+                dirLight.ambient = glm::vec3(0.4f, 0.4f, 0.4f);
+                dirLight.diffuse = glm::vec3(0.9f, 0.9f, 0.9f);
+                dirLight.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+                dirLight.enabled = true;
+                pointLight.enabled = false;
+                spotLight.enabled = false;
+            }
         }
 
         ImGui::End();
+
+        // Update last screenshot path for display
+        if (takeScreenshot) {
+            // This will be handled in main, just show the feedback here
+            lastScreenshotPath = "screenshots/screenshot_" + std::to_string(time(nullptr)) + ".png";
+        }
     }
 }
