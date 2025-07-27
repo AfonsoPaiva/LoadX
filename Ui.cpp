@@ -4,6 +4,7 @@
 #include "imgui_impl_opengl3.h"
 #include "ImGuiFileDialog.h"
 #include "lighting.h"
+#include <ctime>
 
 // Lighting controls
 extern DirectionalLight dirLight;
@@ -13,11 +14,15 @@ extern Material material;
 
 namespace UI {
     std::string selectedModelPath;
+    std::string selectedMtlPath;
     bool modelSelected = false;
+    bool mtlSelected = false;
     bool resetCameraPosition = false;
     bool textureUpdated = false;
     bool cameraMovementEnabled = false;
     bool takeScreenshot = false;
+    std::string selectedTextureFolder;
+    bool textureFolderSelected = false;
 
     void Init(GLFWwindow* window) {
         IMGUI_CHECKVERSION();
@@ -56,12 +61,14 @@ namespace UI {
         const float middleColumnWidth = 400.0f;
         const float rightColumnWidth = 350.0f;
 
-        // Model loading window - Sticky to top-left
+        // Model loading window
         ImGui::SetNextWindowPos(ImVec2(windowPadding, windowPadding), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(leftColumnWidth, 180), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(leftColumnWidth, 250), ImGuiCond_Always);
         ImGui::Begin("Model Loader", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
-        if (ImGui::Button("Open File Dialog"))
+        // Model file selection
+        ImGui::Text("Model File:");
+        if (ImGui::Button("Select Model File", ImVec2(-1, 25)))
             ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose Model File", ".obj,.fbx,.gltf,.glb,.3ds,.dae,.blend,.x3d,.ply,.stl");
 
         if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {
@@ -73,13 +80,64 @@ namespace UI {
         }
 
         if (!selectedModelPath.empty()) {
-            ImGui::TextWrapped("Loaded: %s", selectedModelPath.c_str());
+            ImGui::TextWrapped("Model: %s", selectedModelPath.c_str());
+        }
+
+        // Show loading progress if model is loading
+        if (currentModel && currentModel->IsLoading()) {
+            ImGui::Separator();
+            ImGui::Text("Loading model...");
+            ImGui::ProgressBar(currentModel->GetLoadingProgress(), ImVec2(-1, 0));
+        }
+
+        ImGui::Separator();
+
+        // MTL file selection (only show if OBJ model is loaded)
+        if (currentModel && currentModel->IsObjFile()) {
+            ImGui::Text("MTL File (for OBJ materials):");
+
+            if (ImGui::Button("Select MTL File", ImVec2(-1, 25))) {
+                ImGuiFileDialog::Instance()->OpenDialog("ChooseMtlDlgKey", "Choose MTL File", ".mtl");
+            }
+
+            if (ImGuiFileDialog::Instance()->Display("ChooseMtlDlgKey")) {
+                if (ImGuiFileDialog::Instance()->IsOk()) {
+                    selectedMtlPath = ImGuiFileDialog::Instance()->GetFilePathName();
+                    mtlSelected = true;
+                }
+                ImGuiFileDialog::Instance()->Close();
+            }
+
+            if (!selectedMtlPath.empty()) {
+                ImGui::TextWrapped("MTL: %s", selectedMtlPath.c_str());
+            }
+
+            if (ImGui::Button("Clear MTL File", ImVec2(-1, 20))) {
+                selectedMtlPath = "";
+            }
+
+            ImGui::Separator();
+
+            // Show status
+            if (currentModel->HasMtlFile()) {
+                ImGui::TextColored(ImVec4(0, 1, 0, 1), "Status: OBJ with MTL materials");
+            }
+            else {
+                ImGui::TextColored(ImVec4(1, 1, 0, 1), "Status: OBJ with default materials");
+                ImGui::TextWrapped("Load an MTL file for proper materials and textures");
+            }
+            ImGui::Separator();
+            ImGui::Text("UV Coordinate Debugging:");
+
+        }
+        else if (currentModel && !currentModel->IsObjFile()) {
+            ImGui::TextColored(ImVec4(0, 1, 0, 1), "Status: Non-OBJ format (materials included)");
         }
 
         ImGui::End();
 
-        // Camera Controls - Sticky below model loader (left column)
-        ImGui::SetNextWindowPos(ImVec2(windowPadding, 200), ImGuiCond_Always);
+        // Camera Controls - Adjusted position for larger model loader window
+        ImGui::SetNextWindowPos(ImVec2(windowPadding, 270), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(leftColumnWidth, 200), ImGuiCond_Always);
         ImGui::Begin("Camera Controls", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
@@ -122,9 +180,9 @@ namespace UI {
 
         ImGui::End();
 
-        // Object Transform Controls - Sticky below camera controls (left column)
-        float transformWindowHeight = screenHeight - 420; // Adjusted for new camera controls height
-        ImGui::SetNextWindowPos(ImVec2(windowPadding, 410), ImGuiCond_Always);
+        // Object Transform Controls - Adjusted for new window positions
+        float transformWindowHeight = screenHeight - 490; // Adjusted for larger model loader
+        ImGui::SetNextWindowPos(ImVec2(windowPadding, 480), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(leftColumnWidth, transformWindowHeight), ImGuiCond_Always);
         ImGui::Begin("Object Transform", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
@@ -173,7 +231,7 @@ namespace UI {
 
         ImGui::End();
 
-        // Texture Management Window - Middle column (only show if model is loaded)
+        // Texture Management Window - Middle column (rest of the code remains the same)
         if (currentModel) {
             float middleColumnX = leftColumnWidth + (2 * windowPadding);
             float textureWindowHeight = screenHeight - (2 * windowPadding);
@@ -182,7 +240,57 @@ namespace UI {
             ImGui::SetNextWindowSize(ImVec2(middleColumnWidth, textureWindowHeight), ImGuiCond_Always);
             ImGui::Begin("Texture Manager", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
-            ImGui::Text("Custom Texture Loading");
+            // Show model type information
+            if (currentModel->IsObjFile()) {
+                if (currentModel->HasMtlFile()) {
+                    ImGui::TextColored(ImVec4(0, 1, 0, 1), "OBJ Model with MTL materials loaded");
+                }
+                else {
+                    ImGui::TextColored(ImVec4(1, 1, 0, 1), "OBJ Model without MTL file");
+                    ImGui::Text("Consider loading an MTL file for proper materials");
+                }
+            }
+            else {
+                ImGui::TextColored(ImVec4(0, 0.8f, 1, 1), "Non-OBJ Model (materials embedded)");
+            }
+
+            ImGui::Separator();
+
+            // Auto-load textures from folder section
+            ImGui::Text("Auto-Load Textures from Folder");
+            ImGui::Separator();
+
+            if (ImGui::Button("Select Texture Folder", ImVec2(-1, 30))) {
+                IGFD::FileDialogConfig config;
+                config.path = ".";
+                ImGuiFileDialog::Instance()->OpenDialog("ChooseFolderDlgKey", "Choose Texture Folder", nullptr, config);
+            }
+
+            if (ImGuiFileDialog::Instance()->Display("ChooseFolderDlgKey")) {
+                if (ImGuiFileDialog::Instance()->IsOk()) {
+                    selectedTextureFolder = ImGuiFileDialog::Instance()->GetCurrentPath();
+                    textureFolderSelected = true;
+                }
+                ImGuiFileDialog::Instance()->Close();
+            }
+
+            if (!selectedTextureFolder.empty()) {
+                ImGui::TextWrapped("Folder: %s", selectedTextureFolder.c_str());
+            }
+
+            ImGui::Text("Supported naming patterns:");
+            ImGui::BulletText("*diffuse*, *albedo*, *basecolor*, *color*");
+            ImGui::BulletText("*normal*, *norm*, *nrm*");
+            ImGui::BulletText("*specular*, *spec*");
+            ImGui::BulletText("*roughness*, *rough*");
+            ImGui::BulletText("*metallic*, *metal*, *met*");
+            ImGui::BulletText("*height*, *displacement*, *bump*");
+            ImGui::BulletText("*emission*, *emissive*, *glow*");
+            ImGui::BulletText("*ao*, *ambient*, *occlusion*");
+
+            ImGui::Separator();
+
+            ImGui::Text("Manual Texture Loading");
             ImGui::Separator();
 
             // Helper lambda for texture loading buttons
@@ -201,8 +309,8 @@ namespace UI {
                 }
                 };
 
-            // Diffuse/Albedo
-            ImGui::Text("Diffuse/Albedo Map:");
+            // Diffuse/Albedo/BaseColor
+            ImGui::Text("Diffuse/Albedo/BaseColor Map:");
             CreateTextureLoadButton("Load Diffuse", "DiffuseTexture", "texture_diffuse");
 
             ImGui::Separator();
@@ -259,7 +367,7 @@ namespace UI {
             ImGui::Text("Current Material Textures:");
             MaterialTextures matTextures = currentModel->GetMaterialTextures();
 
-            if (!matTextures.diffuse.empty()) ImGui::BulletText("Diffuse: %zu texture(s)", matTextures.diffuse.size());
+            if (!matTextures.diffuse.empty()) ImGui::BulletText("Diffuse/BaseColor: %zu texture(s)", matTextures.diffuse.size());
             if (!matTextures.specular.empty()) ImGui::BulletText("Specular: %zu texture(s)", matTextures.specular.size());
             if (!matTextures.normal.empty()) ImGui::BulletText("Normal: %zu texture(s)", matTextures.normal.size());
             if (!matTextures.height.empty()) ImGui::BulletText("Height: %zu texture(s)", matTextures.height.size());

@@ -16,9 +16,13 @@ namespace UI {
 
     // Expose variables for external access
     extern std::string selectedModelPath;
+    extern std::string selectedMtlPath;
     extern bool modelSelected;
+    extern bool mtlSelected;
     extern bool resetCameraPosition;
     extern bool textureUpdated;
     extern bool cameraMovementEnabled;
     extern bool takeScreenshot;
+    extern std::string selectedTextureFolder;
+    extern bool textureFolderSelected;
 }

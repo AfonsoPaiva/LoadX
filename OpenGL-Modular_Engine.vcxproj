@@ -149,6 +149,7 @@
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Model.cpp" />
+    <ClCompile Include="Objloader.cpp" />
     <ClCompile Include="Render.cpp" />
     <ClCompile Include="Screenshot.cpp" />
     <ClCompile Include="Ui.cpp" />
@@ -176,6 +177,7 @@
     <ClInclude Include="Lighting.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Model.h" />
+    <ClInclude Include="Objloader.h" />
     <ClInclude Include="render.h" />
     <ClInclude Include="Screenshot.h" />
     <ClInclude Include="Transform.h" />

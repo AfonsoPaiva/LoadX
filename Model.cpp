@@ -1,22 +1,226 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <glad/glad.h>  
 #include "model.h"
+#include "Objloader.h"
 #include "stb_image.h"
 #include <iostream>
+#include <filesystem>
+#include <algorithm>
+#include <fstream>
+#include <ios>
+#include <chrono>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp> 
 #include <glm/gtc/type_ptr.hpp>  
-#include <assimp/Importer.hpp>      
+#include <assimp/Importer.hpp>     
 
 std::vector<Texture> Model::textures_loaded;
 
-Model::Model(const std::string& path) {
-    loadModel(path);
+Model::Model(const std::string& path, const std::string& mtlPath)
+    : modelPath(path), isObjFile(false), hasMtlFile(false), isLoading(true), loadingProgress(0.0f) {
+    isObjFile = isObjFormat(path);
+
+    try {
+        loadModel(path, mtlPath);
+        isLoading = false;
+        loadingProgress = 1.0f;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Failed to load model: " << e.what() << std::endl;
+        isLoading = false;
+        loadingProgress = 0.0f;
+        throw;
+    }
 }
 
 void Model::Draw(unsigned int shaderProgram) {
     for (unsigned int i = 0; i < meshes.size(); i++)
         meshes[i].Draw(shaderProgram);
+}
+
+bool Model::isObjFormat(const std::string& path) {
+    std::string ext = getFileExtension(path);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    return ext == "obj";
+}
+
+std::string Model::getFileExtension(const std::string& path) {
+    size_t lastDot = path.find_last_of(".");
+    if (lastDot != std::string::npos) {
+        return path.substr(lastDot + 1);
+    }
+    return "";
+}
+
+bool Model::isImageFile(const std::string& filename) {
+    std::string ext = filename.substr(filename.find_last_of(".") + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+    return ext == "png" || ext == "jpg" || ext == "jpeg" ||
+        ext == "tga" || ext == "bmp" || ext == "hdr" ||
+        ext == "dds" || ext == "tiff" || ext == "exr";
+}
+
+std::string Model::getTextureTypeFromFilename(const std::string& filename) {
+    std::string lower = filename;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+    // Remove file extension for pattern matching
+    size_t lastDot = lower.find_last_of(".");
+    if (lastDot != std::string::npos) {
+        lower = lower.substr(0, lastDot);
+    }
+
+    // Check for common texture naming patterns
+    if (lower.find("diffuse") != std::string::npos ||
+        lower.find("diff") != std::string::npos ||
+        lower.find("albedo") != std::string::npos ||
+        lower.find("basecolor") != std::string::npos ||
+        lower.find("base_color") != std::string::npos ||
+        lower.find("color") != std::string::npos) {
+        return "texture_diffuse";
+    }
+
+    if (lower.find("normal") != std::string::npos ||
+        lower.find("norm") != std::string::npos ||
+        lower.find("nrm") != std::string::npos) {
+        return "texture_normal";
+    }
+
+    if (lower.find("specular") != std::string::npos ||
+        lower.find("spec") != std::string::npos) {
+        return "texture_specular";
+    }
+
+    if (lower.find("roughness") != std::string::npos ||
+        lower.find("rough") != std::string::npos) {
+        return "texture_roughness";
+    }
+
+    if (lower.find("metallic") != std::string::npos ||
+        lower.find("metal") != std::string::npos ||
+        lower.find("met") != std::string::npos) {
+        return "texture_metallic";
+    }
+
+    if (lower.find("height") != std::string::npos ||
+        lower.find("displacement") != std::string::npos ||
+        lower.find("disp") != std::string::npos ||
+        lower.find("bump") != std::string::npos) {
+        return "texture_height";
+    }
+
+    if (lower.find("emission") != std::string::npos ||
+        lower.find("emissive") != std::string::npos ||
+        lower.find("emit") != std::string::npos ||
+        lower.find("glow") != std::string::npos) {
+        return "texture_emission";
+    }
+
+    if (lower.find("ao") != std::string::npos ||
+        lower.find("ambient") != std::string::npos ||
+        lower.find("occlusion") != std::string::npos) {
+        return "texture_ao";
+    }
+
+    // If no specific pattern found, assume it's a diffuse/albedo texture
+    return "texture_diffuse";
+}
+
+void Model::LoadMaterialFile(const std::string& mtlPath) {
+    if (!isObjFile) {
+        std::cout << "MTL files can only be loaded for OBJ models." << std::endl;
+        return;
+    }
+
+    if (mtlPath.empty()) {
+        std::cout << "No MTL file path provided." << std::endl;
+        return;
+    }
+
+    // Reload the model with the MTL file
+    meshes.clear();
+    textures_loaded.clear();
+    ClearCustomTextures();
+
+    hasMtlFile = true;
+    loadModel(modelPath, mtlPath);
+
+    std::cout << "MTL file loaded: " << mtlPath << std::endl;
+}
+
+void Model::LoadTexturesFromFolder(const std::string& folderPath) {
+    try {
+        ClearCustomTextures();
+
+        if (!std::filesystem::exists(folderPath) || !std::filesystem::is_directory(folderPath)) {
+            std::cerr << "Invalid folder path: " << folderPath << std::endl;
+            return;
+        }
+
+        std::cout << "Scanning folder for textures: " << folderPath << std::endl;
+
+        int texturesFound = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(folderPath)) {
+            if (entry.is_regular_file()) {
+                std::string filename = entry.path().filename().string();
+                std::string fullPath = entry.path().string();
+
+                if (isImageFile(filename)) {
+                    std::string textureType = getTextureTypeFromFilename(filename);
+
+                    // Load the texture
+                    Texture texture;
+                    texture.id = TextureFromFile(fullPath.c_str(), "", false);
+                    texture.type = textureType;
+                    texture.path = fullPath;
+
+                    if (texture.id != 0) {  // Only add if texture loaded successfully
+                        // Add to appropriate category
+                        if (textureType == "texture_diffuse") {
+                            customTextures.diffuse.push_back(texture);
+                            customTextures.baseColor.push_back(texture);  // Also add as baseColor
+                        }
+                        else if (textureType == "texture_specular") {
+                            customTextures.specular.push_back(texture);
+                        }
+                        else if (textureType == "texture_normal") {
+                            customTextures.normal.push_back(texture);
+                        }
+                        else if (textureType == "texture_height") {
+                            customTextures.height.push_back(texture);
+                        }
+                        else if (textureType == "texture_emission") {
+                            customTextures.emission.push_back(texture);
+                        }
+                        else if (textureType == "texture_roughness") {
+                            customTextures.roughness.push_back(texture);
+                        }
+                        else if (textureType == "texture_metallic") {
+                            customTextures.metallic.push_back(texture);
+                        }
+                        else if (textureType == "texture_ao") {
+                            customTextures.ao.push_back(texture);
+                        }
+
+                        // Apply to all meshes
+                        for (auto& mesh : meshes) {
+                            mesh.textures.push_back(texture);
+                        }
+
+                        texturesFound++;
+                        std::cout << "Loaded " << textureType << ": " << filename << std::endl;
+                    }
+                }
+            }
+        }
+
+        std::cout << "Auto-loaded " << texturesFound << " textures from folder." << std::endl;
+
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error loading textures from folder: " << e.what() << std::endl;
+    }
 }
 
 void Model::AddCustomTexture(const std::string& texturePath, const std::string& type) {
@@ -27,6 +231,7 @@ void Model::AddCustomTexture(const std::string& texturePath, const std::string& 
 
     if (type == "texture_diffuse") {
         customTextures.diffuse.push_back(texture);
+        customTextures.baseColor.push_back(texture);  // Also add as baseColor
     }
     else if (type == "texture_specular") {
         customTextures.specular.push_back(texture);
@@ -72,30 +277,109 @@ void Model::ClearCustomTextures() {
     customTextures.roughness.clear();
     customTextures.metallic.clear();
     customTextures.ao.clear();
+    customTextures.baseColor.clear();
 }
 
-void Model::loadModel(const std::string& path) {
-    Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(path,
-        aiProcess_Triangulate |
-        aiProcess_FlipUVs |
-        aiProcess_CalcTangentSpace |
-        aiProcess_GenNormals);
-
-    if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
-        std::cerr << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
-        return;
-    }
+void Model::loadModel(const std::string& path, const std::string& mtlPath) {
     directory = path.substr(0, path.find_last_of('/'));
-    processNode(scene->mRootNode, scene);
+
+    if (isObjFile) {
+        // Use fast OBJ loader
+        std::cout << "Using Fast OBJ Loader for: " << path << std::endl;
+
+        // Set up progress callback
+        FastObjLoader::SetProgressCallback([this](float progress) {
+            this->loadingProgress = progress;
+            });
+
+        try {
+            meshes = FastObjLoader::LoadOBJ(path, mtlPath);
+
+            if (!mtlPath.empty()) {
+                hasMtlFile = true;
+                std::cout << "OBJ model loaded with MTL file support using Fast Loader." << std::endl;
+            }
+            else {
+                hasMtlFile = false;
+                std::cout << "OBJ model loaded without MTL file using Fast Loader." << std::endl;
+            }
+
+            if (meshes.empty()) {
+                throw std::runtime_error("Fast OBJ loader failed to create any meshes");
+            }
+
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Fast OBJ loader failed: " << e.what() << std::endl;
+            throw;
+        }
+    }
+    else {
+        // Use Assimp for other formats
+        std::cout << "Using Assimp for: " << path << std::endl;
+
+        Assimp::Importer importer;
+
+        // Optimized flags for non-OBJ formats
+        unsigned int flags = aiProcess_Triangulate | aiProcess_FlipUVs;
+
+        // Check file size for optimization decisions
+        try {
+            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            std::streamsize size = 0;
+
+            if (file.is_open()) {
+                size = file.tellg();
+                file.close();
+            }
+
+            const std::streamsize LARGE_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB
+
+            if (size < LARGE_FILE_THRESHOLD && size > 0) {
+                flags |= aiProcess_CalcTangentSpace | aiProcess_GenNormals;
+            }
+            else if (size >= LARGE_FILE_THRESHOLD) {
+                std::cout << "Large model detected (" << (size / (1024 * 1024)) << " MB), using optimized loading..." << std::endl;
+                flags |= aiProcess_GenSmoothNormals;
+            }
+            else {
+                flags |= aiProcess_GenSmoothNormals;
+            }
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Warning: Could not check file size, using default settings: " << e.what() << std::endl;
+            flags |= aiProcess_GenSmoothNormals;
+        }
+
+        const aiScene* scene = importer.ReadFile(path, flags);
+
+        if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
+            std::cerr << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
+            return;
+        }
+
+        processNode(scene->mRootNode, scene);
+    }
 }
 
 void Model::processNode(aiNode* node, const aiScene* scene) {
     // Process all the node's meshes
     for (unsigned int i = 0; i < node->mNumMeshes; i++) {
         aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-        meshes.push_back(processMesh(mesh, scene));
+
+        // Update progress
+        loadingProgress = (float)meshes.size() / (float)scene->mNumMeshes;
+
+        try {
+            meshes.push_back(processMesh(mesh, scene));
+        }
+        catch (const std::bad_alloc& e) {
+            std::cerr << "Memory allocation failed for mesh " << i << ": " << e.what() << std::endl;
+            // Try to continue with remaining meshes
+            continue;
+        }
     }
+
     // Then do the same for each of its children
     for (unsigned int i = 0; i < node->mNumChildren; i++) {
         processNode(node->mChildren[i], scene);
@@ -106,6 +390,16 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
     std::vector<Texture> textures;
+
+    // Reserve memory to avoid frequent reallocations
+    vertices.reserve(mesh->mNumVertices);
+
+    // Estimate indices count (triangulated mesh = 3 indices per face)
+    unsigned int estimatedIndices = 0;
+    for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
+        estimatedIndices += mesh->mFaces[i].mNumIndices;
+    }
+    indices.reserve(estimatedIndices);
 
     // Process vertices
     for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
@@ -124,6 +418,9 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
             vector.z = mesh->mNormals[i].z;
             vertex.Normal = vector;
         }
+        else {
+            vertex.Normal = glm::vec3(0.0f, 1.0f, 0.0f); // Default normal
+        }
 
         if (mesh->mTextureCoords[0]) {
             glm::vec2 vec;
@@ -135,18 +432,21 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
             vertex.TexCoords = glm::vec2(0.0f, 0.0f);
         }
 
-        // Tangent
+        // Tangent and Bitangent (only if available and needed)
         if (mesh->HasTangentsAndBitangents()) {
             vector.x = mesh->mTangents[i].x;
             vector.y = mesh->mTangents[i].y;
             vector.z = mesh->mTangents[i].z;
             vertex.Tangent = vector;
 
-            // Bitangent
             vector.x = mesh->mBitangents[i].x;
             vector.y = mesh->mBitangents[i].y;
             vector.z = mesh->mBitangents[i].z;
             vertex.Bitangent = vector;
+        }
+        else {
+            vertex.Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+            vertex.Bitangent = glm::vec3(0.0f, 1.0f, 0.0f);
         }
 
         vertices.push_back(vertex);
@@ -159,11 +459,11 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
             indices.push_back(face.mIndices[j]);
     }
 
-    // Process material
-    if (mesh->mMaterialIndex >= 0) {
+    // Process material (only if not OBJ or if OBJ has MTL file)
+    if (mesh->mMaterialIndex >= 0 && (!isObjFile || hasMtlFile)) {
         aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
 
-        // Load different texture types
+        // Load different texture types - limit concurrent loading
         std::vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
         textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
 

@@ -215,6 +215,13 @@ int main() {
             UI::modelSelected = false;
         }
 
+        // Handle texture folder loading
+        if (UI::textureFolderSelected && currentModel) {
+            currentModel->LoadTexturesFromFolder(UI::selectedTextureFolder);
+            UI::textureUpdated = true;
+            UI::textureFolderSelected = false;
+        }
+
         // Handle screenshot
         if (UI::takeScreenshot) {
             // Clear screen and render scene without UI
