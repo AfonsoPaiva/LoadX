@@ -1,1 +1,10 @@
 .vs/
+build/
+x64/
+OpenGL-M.*/
+*.log
+*.tlog
+*.pdb
+*.exe
+*.obj
+.vscode/
