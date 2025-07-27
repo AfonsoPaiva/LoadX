@@ -1,4 +1,3 @@
-.vs/
 build/
 x64/
 OpenGL-M.*/
@@ -7,4 +6,5 @@ OpenGL-M.*/
 *.pdb
 *.exe
 *.obj
+.vs/
 .vscode/
