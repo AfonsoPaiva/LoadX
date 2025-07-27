@@ -3,16 +3,35 @@
 #include <string>
 #include <glm/glm.hpp>
 #include "Mesh.h"
+#include <functional>
+#include <map>
 
 struct ObjMaterial {
     std::string name;
-    glm::vec3 ambient = glm::vec3(0.2f);
-    glm::vec3 diffuse = glm::vec3(0.8f);
-    glm::vec3 specular = glm::vec3(1.0f);
-    float shininess = 32.0f;
-    std::string diffuseTexture;
-    std::string normalTexture;
-    std::string specularTexture;
+
+    // PBR Material Properties (from MTL file)
+    glm::vec3 ambient = glm::vec3(0.2f);      // Ka
+    glm::vec3 diffuse = glm::vec3(0.8f);      // Kd  
+    glm::vec3 specular = glm::vec3(1.0f);     // Ks
+    glm::vec3 emission = glm::vec3(0.0f);     // Ke
+    float shininess = 32.0f;                  // Ns
+    float opacity = 1.0f;                     // d
+    float refraction = 1.0f;                  // Ni
+
+    // PBR extensions
+    float roughness = 0.5f;                   // Pr
+    float metallic = 0.0f;                    // Pm
+
+    // Texture maps
+    std::string diffuseTexture;               // map_Kd
+    std::string specularTexture;              // map_Ks
+    std::string normalTexture;                // map_Bump or bump
+    std::string heightTexture;                // map_Disp
+    std::string emissionTexture;              // map_Ke
+    std::string roughnessTexture;             // map_Pr
+    std::string metallicTexture;              // map_Pm
+    std::string aoTexture;                    // map_Ao
+    std::string opacityTexture;               // map_d
 };
 
 class FastObjLoader {
@@ -34,7 +53,12 @@ private:
 
     static void parseLine(const std::string& line, size_t lineNumber, size_t totalLines);
     static void parseFace(const std::string& line);
+    static void parseFaceWithMaterial(const std::string& line, const std::string& material,
+        std::map<std::string, std::vector<Vertex>>& materialVertices,
+        std::map<std::string, std::vector<unsigned int>>& materialIndices,
+        std::map<std::string, std::unordered_map<std::string, unsigned int>>& materialVertexCache);
     static Vertex getVertex(const std::string& vertexStr);
     static unsigned int TextureFromFile(const std::string& path, const std::string& directory);
+    static std::vector<Texture> loadTexturesForMaterial(const std::string& materialName, const std::string& directory);
     static void clear();
 };

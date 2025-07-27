@@ -1,9 +1,10 @@
 #include <glad/glad.h>
 #include "mesh.h"
 #include <iostream>
+#include "materialprop.h" 
 
-Mesh::Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std::vector<Texture> textures)
-    : vertices(vertices), indices(indices), textures(textures) {
+Mesh::Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std::vector<Texture> textures, MaterialProperties matProps)
+    : vertices(vertices), indices(indices), textures(textures), materialProps(matProps) {
     setupMesh();
 }
 
@@ -45,8 +46,27 @@ void Mesh::setupMesh() {
 
     glBindVertexArray(0);
 }
-
 void Mesh::Draw(unsigned int shaderProgram) {
+    // Set material properties as uniforms
+    glUniform3fv(glGetUniformLocation(shaderProgram, "material.ambient"), 1, &materialProps.ambient[0]);
+    glUniform3fv(glGetUniformLocation(shaderProgram, "material.diffuse"), 1, &materialProps.diffuse[0]);
+    glUniform3fv(glGetUniformLocation(shaderProgram, "material.specular"), 1, &materialProps.specular[0]);
+    glUniform3fv(glGetUniformLocation(shaderProgram, "material.emission"), 1, &materialProps.emission[0]);
+    glUniform1f(glGetUniformLocation(shaderProgram, "material.shininess"), materialProps.shininess);
+    glUniform1f(glGetUniformLocation(shaderProgram, "material.opacity"), materialProps.opacity);
+    glUniform1f(glGetUniformLocation(shaderProgram, "material.roughness"), materialProps.roughness);
+    glUniform1f(glGetUniformLocation(shaderProgram, "material.metallic"), materialProps.metallic);
+
+    // Set texture availability flags (you'll need to implement this logic)
+    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasDiffuse"), false);
+    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasSpecular"), false);
+    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasNormal"), false);
+    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasHeight"), false);
+    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasEmission"), false);
+    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasRoughness"), false);
+    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasMetallic"), false);
+    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasAO"), false);
+
     // Bind appropriate textures
     unsigned int diffuseNr = 1;
     unsigned int specularNr = 1;
@@ -63,22 +83,38 @@ void Mesh::Draw(unsigned int shaderProgram) {
         std::string number;
         std::string name = textures[i].type;
 
-        if (name == "texture_diffuse")
+        if (name == "texture_diffuse") {
             number = std::to_string(diffuseNr++);
-        else if (name == "texture_specular")
+            glUniform1i(glGetUniformLocation(shaderProgram, "material.hasDiffuse"), true);
+        }
+        else if (name == "texture_specular") {
             number = std::to_string(specularNr++);
-        else if (name == "texture_normal")
+            glUniform1i(glGetUniformLocation(shaderProgram, "material.hasSpecular"), true);
+        }
+        else if (name == "texture_normal") {
             number = std::to_string(normalNr++);
-        else if (name == "texture_height")
+            glUniform1i(glGetUniformLocation(shaderProgram, "material.hasNormal"), true);
+        }
+        else if (name == "texture_height") {
             number = std::to_string(heightNr++);
-        else if (name == "texture_emission")
+            glUniform1i(glGetUniformLocation(shaderProgram, "material.hasHeight"), true);
+        }
+        else if (name == "texture_emission") {
             number = std::to_string(emissionNr++);
-        else if (name == "texture_roughness")
+            glUniform1i(glGetUniformLocation(shaderProgram, "material.hasEmission"), true);
+        }
+        else if (name == "texture_roughness") {
             number = std::to_string(roughnessNr++);
-        else if (name == "texture_metallic")
+            glUniform1i(glGetUniformLocation(shaderProgram, "material.hasRoughness"), true);
+        }
+        else if (name == "texture_metallic") {
             number = std::to_string(metallicNr++);
-        else if (name == "texture_ao")
+            glUniform1i(glGetUniformLocation(shaderProgram, "material.hasMetallic"), true);
+        }
+        else if (name == "texture_ao") {
             number = std::to_string(aoNr++);
+            glUniform1i(glGetUniformLocation(shaderProgram, "material.hasAO"), true);
+        }
 
         // Set the sampler to the correct texture unit
         std::string uniformName = "material." + name + number;
@@ -88,19 +124,9 @@ void Mesh::Draw(unsigned int shaderProgram) {
         glBindTexture(GL_TEXTURE_2D, textures[i].id);
     }
 
-    // Set texture availability flags
-    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasDiffuse"), diffuseNr > 1);
-    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasSpecular"), specularNr > 1);
-    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasNormal"), normalNr > 1);
-    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasHeight"), heightNr > 1);
-    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasEmission"), emissionNr > 1);
-    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasRoughness"), roughnessNr > 1);
-    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasMetallic"), metallicNr > 1);
-    glUniform1i(glGetUniformLocation(shaderProgram, "material.hasAO"), aoNr > 1);
-
     // Draw mesh
     glBindVertexArray(VAO);
-    glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 
     // Always good practice to set everything back to defaults once configured.

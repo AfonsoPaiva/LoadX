@@ -23,10 +23,14 @@ struct Material {
     bool hasAO;
     
     // Fallback material properties
-    vec3 ambient;
+   vec3 ambient;
     vec3 diffuse;
     vec3 specular;
+    vec3 emission;
     float shininess;
+    float opacity;
+    float roughness;
+    float metallic;
 }; 
 
 struct DirectionalLight {
@@ -92,9 +96,9 @@ void main()
     // Sample textures
     vec3 albedo = material.hasDiffuse ? texture(material.texture_diffuse1, TexCoords).rgb : material.diffuse;
     vec3 specularColor = material.hasSpecular ? texture(material.texture_specular1, TexCoords).rgb : material.specular;
-    vec3 emission = material.hasEmission ? texture(material.texture_emission1, TexCoords).rgb : vec3(0.0);
-    float roughness = material.hasRoughness ? texture(material.texture_roughness1, TexCoords).r : (1.0 - material.shininess / 256.0);
-    float metallic = material.hasMetallic ? texture(material.texture_metallic1, TexCoords).r : 0.0;
+    vec3 emission = material.hasEmission ? texture(material.texture_emission1, TexCoords).rgb : material.emission;
+    float roughness = material.hasRoughness ? texture(material.texture_roughness1, TexCoords).r : material.roughness;
+    float metallic = material.hasMetallic ? texture(material.texture_metallic1, TexCoords).r : material.metallic;
     float ao = material.hasAO ? texture(material.texture_ao1, TexCoords).r : 1.0;
     
     // Calculate normal (either from normal map or interpolated normal)

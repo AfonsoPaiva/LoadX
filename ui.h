@@ -14,6 +14,14 @@ namespace UI {
     void EndFrame();
     void Shutdown();
 
+    // Debug console functions
+    void AddDebugMessage(const std::string& message);
+    void ClearDebugConsole();
+
+    // Stats functions
+    void UpdateStats(float deltaTime);
+    void UpdateModelLoadingProgress(float progress, const std::string& stage = "");
+
     // Expose variables for external access
     extern std::string selectedModelPath;
     extern std::string selectedMtlPath;
@@ -25,4 +33,5 @@ namespace UI {
     extern bool takeScreenshot;
     extern std::string selectedTextureFolder;
     extern bool textureFolderSelected;
+    extern bool reloadModelWithMtl;
 }

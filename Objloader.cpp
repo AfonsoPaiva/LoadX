@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <glad/glad.h>
 #include "stb_image.h"
+#include <map>
 
 // Static member definitions
 std::vector<glm::vec3> FastObjLoader::positions;
@@ -19,6 +20,61 @@ std::function<void(float)> FastObjLoader::progressCallback;
 
 void FastObjLoader::SetProgressCallback(std::function<void(float)> callback) {
     progressCallback = callback;
+}
+
+std::vector<Texture> FastObjLoader::loadTexturesForMaterial(const std::string& materialName, const std::string& directory) {
+    std::vector<Texture> textures;
+
+    // Find the material
+    ObjMaterial* mat = nullptr;
+    for (auto& material : materials) {
+        if (material.name == materialName) {
+            mat = &material;
+            break;
+        }
+    }
+
+    if (!mat) {
+        return textures; // Return empty if material not found
+    }
+
+    // Load diffuse texture
+    if (!mat->diffuseTexture.empty()) {
+        Texture texture;
+        texture.id = TextureFromFile(mat->diffuseTexture, directory);
+        texture.type = "texture_diffuse";
+        texture.path = mat->diffuseTexture;
+        if (texture.id != 0) {
+            textures.push_back(texture);
+            std::cout << "Loaded diffuse texture: " << mat->diffuseTexture << std::endl;
+        }
+    }
+
+    // Load normal texture
+    if (!mat->normalTexture.empty()) {
+        Texture texture;
+        texture.id = TextureFromFile(mat->normalTexture, directory);
+        texture.type = "texture_normal";
+        texture.path = mat->normalTexture;
+        if (texture.id != 0) {
+            textures.push_back(texture);
+            std::cout << "Loaded normal texture: " << mat->normalTexture << std::endl;
+        }
+    }
+
+    // Load specular texture
+    if (!mat->specularTexture.empty()) {
+        Texture texture;
+        texture.id = TextureFromFile(mat->specularTexture, directory);
+        texture.type = "texture_specular";
+        texture.path = mat->specularTexture;
+        if (texture.id != 0) {
+            textures.push_back(texture);
+            std::cout << "Loaded specular texture: " << mat->specularTexture << std::endl;
+        }
+    }
+
+    return textures;
 }
 
 std::vector<Mesh> FastObjLoader::LoadOBJ(const std::string& objPath, const std::string& mtlPath) {
@@ -44,33 +100,55 @@ std::vector<Mesh> FastObjLoader::LoadOBJ(const std::string& objPath, const std::
     file.seekg(0, std::ios::beg);
 
     // Reserve memory (rough estimates)
-    positions.reserve(fileSize / 50);  // Rough estimate: ~50 bytes per vertex line
-    texCoords.reserve(fileSize / 60);  // Texture coordinates are less common
+    positions.reserve(fileSize / 50);
+    texCoords.reserve(fileSize / 60);
     normals.reserve(fileSize / 50);
-    vertices.reserve(fileSize / 40);   // Faces create more vertices than positions
-    indices.reserve(fileSize / 15);    // Multiple indices per face
+    vertices.reserve(fileSize / 40);
+    indices.reserve(fileSize / 15);
 
     std::cout << "Loading OBJ file: " << objPath << " (" << (fileSize / (1024 * 1024)) << " MB)" << std::endl;
 
     std::string line;
     size_t lineNumber = 0;
     size_t processedBytes = 0;
+    std::string currentMaterial = "";
+    std::vector<Mesh> meshes;
+
+    // Track per-material geometry
+    std::map<std::string, std::vector<Vertex>> materialVertices;
+    std::map<std::string, std::vector<unsigned int>> materialIndices;
+    std::map<std::string, std::unordered_map<std::string, unsigned int>> materialVertexCache;
 
     while (std::getline(file, line)) {
         lineNumber++;
-        processedBytes += line.length() + 1; // +1 for newline
+        processedBytes += line.length() + 1;
 
         // Update progress every 10000 lines
         if (lineNumber % 10000 == 0) {
             float progress = (float)processedBytes / (float)fileSize;
             if (progressCallback) {
-                progressCallback(progress * 0.8f); // Reserve 20% for mesh creation
+                progressCallback(progress * 0.8f);
             }
         }
 
         if (line.empty() || line[0] == '#') continue;
 
-        parseLine(line, lineNumber, fileSize);
+        // Handle material usage
+        if (line.substr(0, 6) == "usemtl") {
+            std::istringstream iss(line);
+            std::string command;
+            iss >> command >> currentMaterial;
+            std::cout << "Using material: " << currentMaterial << std::endl;
+            continue;
+        }
+
+        // Parse geometry with current material context
+        if (line[0] == 'f' && line[1] == ' ') {
+            parseFaceWithMaterial(line, currentMaterial, materialVertices, materialIndices, materialVertexCache);
+        }
+        else {
+            parseLine(line, lineNumber, fileSize);
+        }
     }
 
     file.close();
@@ -79,23 +157,39 @@ std::vector<Mesh> FastObjLoader::LoadOBJ(const std::string& objPath, const std::
         progressCallback(0.9f);
     }
 
-    // Create mesh
-    std::vector<Texture> textures; // Will be loaded separately through the UI
-    std::vector<Mesh> meshes;
+    // Create meshes for each material
+    std::string directory = objPath.substr(0, objPath.find_last_of('/'));
+    if (directory == objPath) directory = objPath.substr(0, objPath.find_last_of('\\'));
+    if (directory == objPath) directory = "";
 
-    if (!vertices.empty() && !indices.empty()) {
+    for (const auto& materialPair : materialVertices) {
+        const std::string& matName = materialPair.first;
+        const std::vector<Vertex>& verts = materialPair.second;
+        const auto& indicesIt = materialIndices.find(matName);
+
+        if (indicesIt != materialIndices.end()) {
+            const std::vector<unsigned int>& inds = indicesIt->second;
+
+            if (!verts.empty() && !inds.empty()) {
+                std::vector<Texture> textures = loadTexturesForMaterial(matName, directory);
+                meshes.emplace_back(verts, inds, textures);
+                std::cout << "Created mesh for material '" << matName << "' with " << verts.size() << " vertices" << std::endl;
+            }
+        }
+    }
+
+    // If no materials were used, create a single mesh with all geometry
+    if (materialVertices.empty() && !vertices.empty() && !indices.empty()) {
+        std::vector<Texture> textures;
         meshes.emplace_back(vertices, indices, textures);
+        std::cout << "Created single mesh without materials" << std::endl;
     }
 
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
     std::cout << "Fast OBJ loading completed in " << duration.count() << "ms" << std::endl;
-    std::cout << "Loaded: " << positions.size() << " positions, "
-        << normals.size() << " normals, "
-        << texCoords.size() << " texture coordinates" << std::endl;
-    std::cout << "Created: " << vertices.size() << " vertices, "
-        << indices.size() << " indices" << std::endl;
+    std::cout << "Created " << meshes.size() << " mesh(es)" << std::endl;
 
     if (progressCallback) {
         progressCallback(1.0f);
@@ -122,7 +216,7 @@ void FastObjLoader::parseLine(const std::string& line, size_t lineNumber, size_t
             // Texture coordinate
             float u, v;
             if (sscanf_s(data + 3, "%f %f", &u, &v) >= 2) {
-                texCoords.emplace_back(u, v);
+                texCoords.emplace_back(u, 1.0f - v);
             }
         }
         else if (data[1] == 'n' && data[2] == ' ') {
@@ -170,6 +264,44 @@ void FastObjLoader::parseFace(const std::string& line) {
         indices.push_back(faceIndices[0]);
         indices.push_back(faceIndices[i]);
         indices.push_back(faceIndices[i + 1]);
+    }
+}
+
+void FastObjLoader::parseFaceWithMaterial(const std::string& line, const std::string& material,
+    std::map<std::string, std::vector<Vertex>>& materialVertices,
+    std::map<std::string, std::vector<unsigned int>>& materialIndices,
+    std::map<std::string, std::unordered_map<std::string, unsigned int>>& materialVertexCache) {
+
+    std::string matKey = material.empty() ? "default" : material;
+    auto& vertexCache = materialVertexCache[matKey];
+    auto& verts = materialVertices[matKey];
+    auto& inds = materialIndices[matKey];
+
+    std::istringstream iss(line.substr(2)); // Skip "f "
+    std::string vertexStr;
+    std::vector<unsigned int> faceIndices;
+
+    while (iss >> vertexStr) {
+        // Check cache first
+        auto it = vertexCache.find(vertexStr);
+        if (it != vertexCache.end()) {
+            faceIndices.push_back(it->second);
+        }
+        else {
+            // Create new vertex
+            Vertex vertex = getVertex(vertexStr);
+            unsigned int index = static_cast<unsigned int>(verts.size());
+            verts.push_back(vertex);
+            vertexCache[vertexStr] = index;
+            faceIndices.push_back(index);
+        }
+    }
+
+    // Triangulate face
+    for (size_t i = 1; i < faceIndices.size() - 1; i++) {
+        inds.push_back(faceIndices[0]);
+        inds.push_back(faceIndices[i]);
+        inds.push_back(faceIndices[i + 1]);
     }
 }
 
@@ -231,6 +363,9 @@ std::vector<ObjMaterial> FastObjLoader::LoadMTL(const std::string& mtlPath) {
 
     ObjMaterial currentMaterial;
     std::string line;
+    bool hasMaterial = false;
+
+    std::cout << "Loading MTL file: " << mtlPath << std::endl;
 
     while (std::getline(file, line)) {
         if (line.empty() || line[0] == '#') continue;
@@ -240,41 +375,90 @@ std::vector<ObjMaterial> FastObjLoader::LoadMTL(const std::string& mtlPath) {
         iss >> command;
 
         if (command == "newmtl") {
-            if (!currentMaterial.name.empty()) {
+            if (hasMaterial) {
                 materials.push_back(currentMaterial);
+                std::cout << "Loaded material: " << currentMaterial.name << std::endl;
             }
-            iss >> currentMaterial.name;
+
             currentMaterial = ObjMaterial(); // Reset to defaults
-            currentMaterial.name = currentMaterial.name;
+            iss >> currentMaterial.name;
+            hasMaterial = true;
         }
-        else if (command == "Ka") {
+        // Standard MTL properties
+        else if (command == "Ka") { // Ambient
             iss >> currentMaterial.ambient.x >> currentMaterial.ambient.y >> currentMaterial.ambient.z;
         }
-        else if (command == "Kd") {
+        else if (command == "Kd") { // Diffuse
             iss >> currentMaterial.diffuse.x >> currentMaterial.diffuse.y >> currentMaterial.diffuse.z;
         }
-        else if (command == "Ks") {
+        else if (command == "Ks") { // Specular
             iss >> currentMaterial.specular.x >> currentMaterial.specular.y >> currentMaterial.specular.z;
         }
-        else if (command == "Ns") {
+        else if (command == "Ke") { // Emission
+            iss >> currentMaterial.emission.x >> currentMaterial.emission.y >> currentMaterial.emission.z;
+        }
+        else if (command == "Ns") { // Shininess
             iss >> currentMaterial.shininess;
         }
-        else if (command == "map_Kd") {
-            iss >> currentMaterial.diffuseTexture;
+        else if (command == "d" || command == "Tr") { // Opacity
+            iss >> currentMaterial.opacity;
         }
-        else if (command == "map_Bump" || command == "bump") {
-            iss >> currentMaterial.normalTexture;
+        else if (command == "Ni") { // Refraction index
+            iss >> currentMaterial.refraction;
+        }
+        // PBR Extensions
+        else if (command == "Pr") { // Roughness
+            iss >> currentMaterial.roughness;
+        }
+        else if (command == "Pm") { // Metallic
+            iss >> currentMaterial.metallic;
+        }
+        // Texture maps
+        else if (command == "map_Kd") {
+            std::getline(iss, currentMaterial.diffuseTexture);
+            currentMaterial.diffuseTexture = currentMaterial.diffuseTexture.substr(1); // Remove leading space
         }
         else if (command == "map_Ks") {
-            iss >> currentMaterial.specularTexture;
+            std::getline(iss, currentMaterial.specularTexture);
+            currentMaterial.specularTexture = currentMaterial.specularTexture.substr(1);
+        }
+        else if (command == "map_Bump" || command == "bump") {
+            std::getline(iss, currentMaterial.normalTexture);
+            currentMaterial.normalTexture = currentMaterial.normalTexture.substr(1);
+        }
+        else if (command == "map_Disp") {
+            std::getline(iss, currentMaterial.heightTexture);
+            currentMaterial.heightTexture = currentMaterial.heightTexture.substr(1);
+        }
+        else if (command == "map_Ke") {
+            std::getline(iss, currentMaterial.emissionTexture);
+            currentMaterial.emissionTexture = currentMaterial.emissionTexture.substr(1);
+        }
+        else if (command == "map_Pr") {
+            std::getline(iss, currentMaterial.roughnessTexture);
+            currentMaterial.roughnessTexture = currentMaterial.roughnessTexture.substr(1);
+        }
+        else if (command == "map_Pm") {
+            std::getline(iss, currentMaterial.metallicTexture);
+            currentMaterial.metallicTexture = currentMaterial.metallicTexture.substr(1);
+        }
+        else if (command == "map_Ao") {
+            std::getline(iss, currentMaterial.aoTexture);
+            currentMaterial.aoTexture = currentMaterial.aoTexture.substr(1);
+        }
+        else if (command == "map_d") {
+            std::getline(iss, currentMaterial.opacityTexture);
+            currentMaterial.opacityTexture = currentMaterial.opacityTexture.substr(1);
         }
     }
 
     // Don't forget the last material
-    if (!currentMaterial.name.empty()) {
+    if (hasMaterial) {
         materials.push_back(currentMaterial);
+        std::cout << "Loaded material: " << currentMaterial.name << std::endl;
     }
 
+    std::cout << "Total materials loaded: " << materials.size() << std::endl;
     return materials;
 }
 

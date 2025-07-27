@@ -7,6 +7,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include "materialprop.h" 
 #include "Mesh.h"
 
 struct MaterialTextures {
@@ -20,6 +21,7 @@ struct MaterialTextures {
     std::vector<Texture> ao;
     std::vector<Texture> baseColor;
 };
+
 
 class Model {
 public:
@@ -46,6 +48,12 @@ public:
     void SetUVFlipped(bool flipped) { uvFlipped = flipped; }
     bool IsUVFlipped() const { return uvFlipped; }
 
+    // Model bounds and auto-sizing
+    glm::vec3 GetModelCenter() const { return modelCenter; }
+    glm::vec3 GetModelSize() const { return modelSize; }
+    float GetRecommendedScale() const { return recommendedScale; }
+    void CalculateModelBounds();
+
 private:
     std::vector<Mesh> meshes;
     std::string directory;
@@ -58,6 +66,13 @@ private:
     static std::vector<Texture> textures_loaded;
     MaterialTextures customTextures;
 
+    // Model bounds for auto-sizing
+    glm::vec3 minBounds;
+    glm::vec3 maxBounds;
+    glm::vec3 modelCenter;
+    glm::vec3 modelSize;
+    float recommendedScale;
+
     void loadModel(const std::string& path, const std::string& mtlPath = "");
     void processNode(aiNode* node, const aiScene* scene);
     Mesh processMesh(aiMesh* mesh, const aiScene* scene);
@@ -69,4 +84,7 @@ private:
     bool isImageFile(const std::string& filename);
     bool isObjFormat(const std::string& path);
     std::string getFileExtension(const std::string& path);
+
+    //materail prop
+    MaterialProperties extractMaterialProperties(aiMaterial* mat);
 };

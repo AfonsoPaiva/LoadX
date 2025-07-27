@@ -26,6 +26,47 @@ float lastFrame = 0.0f;
 int SCR_WIDTH = 1920;
 int SCR_HEIGHT = 1080;
 
+// Custom cout buffer to capture debug messages
+class DebugBuffer : public std::streambuf {
+private:
+    std::streambuf* original_cout;
+    std::ostringstream buffer;
+
+public:
+    DebugBuffer() : original_cout(std::cout.rdbuf()) {
+        std::cout.rdbuf(this);
+    }
+
+    ~DebugBuffer() {
+        std::cout.rdbuf(original_cout);
+    }
+
+protected:
+    virtual int overflow(int c) override {
+        if (c != EOF) {
+            buffer << static_cast<char>(c);
+            original_cout->sputc(c); // Still output to original console
+
+            // If we hit a newline, send the accumulated message to UI
+            if (c == '\n') {
+                std::string message = buffer.str();
+                if (!message.empty() && message != "\n") {
+                    // Remove the trailing newline
+                    if (message.back() == '\n') {
+                        message.pop_back();
+                    }
+                    UI::AddDebugMessage(message);
+                }
+                buffer.str("");
+                buffer.clear();
+            }
+        }
+        return c;
+    }
+};
+
+static DebugBuffer debugBuffer;
+
 // Mouse callback
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (UI::cameraMovementEnabled) {
@@ -45,6 +86,7 @@ void window_size_callback(GLFWwindow* window, int width, int height) {
     SCR_WIDTH = width;
     SCR_HEIGHT = height;
     glViewport(0, 0, width, height);
+    UI::AddDebugMessage("Window resized to " + std::to_string(width) + "x" + std::to_string(height));
 }
 
 // Process input
@@ -140,7 +182,14 @@ void renderScene() {
     if (currentModel) {
         glUseProgram(shaderProgram);
 
-        glm::mat4 model = modelTransform.GetModelMatrix();
+        // Use centered model matrix if model has bounds calculated
+        glm::mat4 model;
+        if (currentModel->GetModelSize() != glm::vec3(0.0f)) {
+            model = modelTransform.GetModelMatrix(currentModel->GetModelCenter());
+        }
+        else {
+            model = modelTransform.GetModelMatrix();
+        }
 
         // Camera/View transformation
         glm::mat4 view = camera.GetViewMatrix();
@@ -159,6 +208,8 @@ void renderScene() {
 }
 
 int main() {
+    std::cout << "Initializing OpenGL Modular Engine..." << std::endl;
+
     Window::Init();
 
     // Set callbacks
@@ -174,17 +225,24 @@ int main() {
 
     glEnable(GL_DEPTH_TEST);
 
+    std::cout << "Creating shader program..." << std::endl;
     shaderProgram = createShaderProgram("shaders/vertex_shader.glsl", "shaders/fragment_shader.glsl");
     if (shaderProgram == 0) {
         std::cerr << "Failed to create shader program!" << std::endl;
         return -1;
     }
+    std::cout << "Shader program created successfully" << std::endl;
+
+    std::cout << "Engine initialization complete. Ready for use." << std::endl;
 
     while (!Window::ShouldClose()) {
         // Calculate delta time
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+
+        // Update UI stats with current frame performance
+        UI::UpdateStats(deltaTime);
 
         // Input
         processInput(window);
@@ -200,23 +258,81 @@ int main() {
         if (UI::modelSelected) {
             if (currentModel) delete currentModel;
             try {
-                currentModel = new Model(UI::selectedModelPath);
+                std::cout << "Loading model: " << UI::selectedModelPath << std::endl;
+                UI::UpdateModelLoadingProgress(0.0f, "Initializing...");
 
-                // Reset transform and set reasonable default scale - centered properly
+                // Auto-detect MTL file if not explicitly provided
+                std::string mtlPath = "";
+                if (UI::selectedModelPath.find(".obj") != std::string::npos) {
+                    UI::UpdateModelLoadingProgress(0.1f, "Detecting MTL file...");
+
+                    // Try to find MTL file in same directory
+                    std::string objPath = UI::selectedModelPath;
+                    std::string basePath = objPath.substr(0, objPath.find_last_of('.'));
+                    std::string autoMtlPath = basePath + ".mtl";
+
+                    std::ifstream mtlFile(autoMtlPath);
+                    if (mtlFile.good()) {
+                        mtlPath = autoMtlPath;
+                        UI::selectedMtlPath = autoMtlPath;
+                        std::cout << "Auto-detected MTL file: " << autoMtlPath << std::endl;
+                    }
+                    mtlFile.close();
+                }
+
+                UI::UpdateModelLoadingProgress(0.2f, "Loading model data...");
+                currentModel = new Model(UI::selectedModelPath, mtlPath);
+
+                UI::UpdateModelLoadingProgress(0.8f, "Calculating bounds...");
+
+                // Reset transform and apply recommended scale for reasonable size
                 modelTransform.position = glm::vec3(0.0f, 0.0f, 0.0f);
                 modelTransform.rotation = glm::vec3(0.0f, 0.0f, 0.0f);
-                modelTransform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+                // Apply recommended scale for automatic sizing
+                float recommendedScale = currentModel->GetRecommendedScale();
+                modelTransform.scale = glm::vec3(recommendedScale);
+
+                UI::UpdateModelLoadingProgress(1.0f, "Complete!");
 
                 std::cout << "Model loaded successfully: " << UI::selectedModelPath << std::endl;
+                std::cout << "Applied automatic scale: " << recommendedScale << std::endl;
             }
             catch (const std::exception& e) {
                 std::cerr << "Failed to load model: " << e.what() << std::endl;
+                UI::UpdateModelLoadingProgress(1.0f, "Failed!");
             }
             UI::modelSelected = false;
         }
 
+        // Handle MTL file loading for existing OBJ model
+        if (UI::reloadModelWithMtl && currentModel) {
+            try {
+                std::cout << "Reloading model with MTL file: " << UI::selectedMtlPath << std::endl;
+                UI::UpdateModelLoadingProgress(0.0f, "Reloading with MTL...");
+
+                if (currentModel) delete currentModel;
+                currentModel = new Model(UI::selectedModelPath, UI::selectedMtlPath);
+
+                // Preserve current transform
+                float recommendedScale = currentModel->GetRecommendedScale();
+                if (modelTransform.scale.x == 1.0f && modelTransform.scale.y == 1.0f && modelTransform.scale.z == 1.0f) {
+                    modelTransform.scale = glm::vec3(recommendedScale);
+                }
+
+                UI::UpdateModelLoadingProgress(1.0f, "MTL Reload Complete!");
+                std::cout << "Model reloaded with MTL file: " << UI::selectedMtlPath << std::endl;
+            }
+            catch (const std::exception& e) {
+                std::cerr << "Failed to reload model with MTL: " << e.what() << std::endl;
+                UI::UpdateModelLoadingProgress(1.0f, "MTL Reload Failed!");
+            }
+            UI::reloadModelWithMtl = false;
+        }
+
         // Handle texture folder loading
         if (UI::textureFolderSelected && currentModel) {
+            std::cout << "Loading textures from folder: " << UI::selectedTextureFolder << std::endl;
             currentModel->LoadTexturesFromFolder(UI::selectedTextureFolder);
             UI::textureUpdated = true;
             UI::textureFolderSelected = false;
@@ -230,7 +346,10 @@ int main() {
 
             // Take screenshot before rendering UI
             std::string filename = Screenshot::GenerateScreenshotFilename();
-            Screenshot::SaveScreenshot(filename, SCR_WIDTH, SCR_HEIGHT);
+            bool success = Screenshot::SaveScreenshot(filename, SCR_WIDTH, SCR_HEIGHT);
+            if (success) {
+                std::cout << "Screenshot saved: " << filename << std::endl;
+            }
 
             UI::takeScreenshot = false;
         }
@@ -247,10 +366,12 @@ int main() {
         Window::SwapBuffers();
     }
 
+    std::cout << "Shutting down engine..." << std::endl;
     if (currentModel) delete currentModel;
     glDeleteProgram(shaderProgram);
     UI::Shutdown();
     Window::Shutdown();
+    std::cout << "Engine shutdown complete" << std::endl;
 
     return 0;
 }

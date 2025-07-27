@@ -5,6 +5,7 @@
 #include "stb_image.h"
 #include <iostream>
 #include <filesystem>
+#include "materialprop.h"
 #include <algorithm>
 #include <fstream>
 #include <ios>
@@ -17,11 +18,13 @@
 std::vector<Texture> Model::textures_loaded;
 
 Model::Model(const std::string& path, const std::string& mtlPath)
-    : modelPath(path), isObjFile(false), hasMtlFile(false), isLoading(true), loadingProgress(0.0f) {
+    : modelPath(path), isObjFile(false), hasMtlFile(false), isLoading(true), loadingProgress(0.0f), uvFlipped(false),
+    minBounds(FLT_MAX), maxBounds(-FLT_MAX), modelCenter(0.0f), modelSize(0.0f), recommendedScale(1.0f) {
     isObjFile = isObjFormat(path);
 
     try {
         loadModel(path, mtlPath);
+        CalculateModelBounds();
         isLoading = false;
         loadingProgress = 1.0f;
     }
@@ -31,6 +34,54 @@ Model::Model(const std::string& path, const std::string& mtlPath)
         loadingProgress = 0.0f;
         throw;
     }
+}
+
+
+void Model::CalculateModelBounds() {
+    if (meshes.empty()) {
+        return;
+    }
+
+    // Reset bounds
+    minBounds = glm::vec3(FLT_MAX);
+    maxBounds = glm::vec3(-FLT_MAX);
+
+    // Calculate bounds across all meshes
+    for (const auto& mesh : meshes) {
+        for (const auto& vertex : mesh.vertices) {
+            minBounds.x = std::min(minBounds.x, vertex.Position.x);
+            minBounds.y = std::min(minBounds.y, vertex.Position.y);
+            minBounds.z = std::min(minBounds.z, vertex.Position.z);
+
+            maxBounds.x = std::max(maxBounds.x, vertex.Position.x);
+            maxBounds.y = std::max(maxBounds.y, vertex.Position.y);
+            maxBounds.z = std::max(maxBounds.z, vertex.Position.z);
+        }
+    }
+
+    // Calculate center and size
+    modelCenter = (minBounds + maxBounds) * 0.5f;
+    modelSize = maxBounds - minBounds;
+
+    // Calculate recommended scale to fit in a reasonable viewport size
+    float maxDimension = std::max({ modelSize.x, modelSize.y, modelSize.z });
+
+    // Target size: models should fit in a 2-unit cube for reasonable viewing
+    const float TARGET_SIZE = 2.0f;
+
+    if (maxDimension > 0.0f) {
+        recommendedScale = TARGET_SIZE / maxDimension;
+    }
+    else {
+        recommendedScale = 1.0f;
+    }
+
+    std::cout << "Model bounds calculated:" << std::endl;
+    std::cout << "  Min: (" << minBounds.x << ", " << minBounds.y << ", " << minBounds.z << ")" << std::endl;
+    std::cout << "  Max: (" << maxBounds.x << ", " << maxBounds.y << ", " << maxBounds.z << ")" << std::endl;
+    std::cout << "  Center: (" << modelCenter.x << ", " << modelCenter.y << ", " << modelCenter.z << ")" << std::endl;
+    std::cout << "  Size: (" << modelSize.x << ", " << modelSize.y << ", " << modelSize.z << ")" << std::endl;
+    std::cout << "  Recommended scale: " << recommendedScale << std::endl;
 }
 
 void Model::Draw(unsigned int shaderProgram) {
@@ -386,10 +437,67 @@ void Model::processNode(aiNode* node, const aiScene* scene) {
     }
 }
 
+MaterialProperties Model::extractMaterialProperties(aiMaterial* mat) {
+    MaterialProperties props;
+
+    // Get material name
+    aiString name;
+    mat->Get(AI_MATKEY_NAME, name);
+    props.name = name.C_Str();
+
+    // Standard material properties
+    aiColor3D color;
+
+    if (mat->Get(AI_MATKEY_COLOR_AMBIENT, color) == AI_SUCCESS) {
+        props.ambient = glm::vec3(color.r, color.g, color.b);
+    }
+
+    if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
+        props.diffuse = glm::vec3(color.r, color.g, color.b);
+    }
+
+    if (mat->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS) {
+        props.specular = glm::vec3(color.r, color.g, color.b);
+    }
+
+    if (mat->Get(AI_MATKEY_COLOR_EMISSIVE, color) == AI_SUCCESS) {
+        props.emission = glm::vec3(color.r, color.g, color.b);
+    }
+
+    // Shininess
+    float shininess;
+    if (mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
+        props.shininess = shininess;
+    }
+
+    // Opacity
+    float opacity;
+    if (mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
+        props.opacity = opacity;
+    }
+
+    // PBR properties (if available)
+    float roughness, metallic;
+    if (mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) == AI_SUCCESS) {
+        props.roughness = roughness;
+    }
+
+    if (mat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS) {
+        props.metallic = metallic;
+    }
+
+    std::cout << "Extracted material: " << props.name
+        << " (R:" << props.roughness << ", M:" << props.metallic << ")" << std::endl;
+
+    return props;
+}
+
+
 Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
     std::vector<Texture> textures;
+    MaterialProperties matProps;
 
     // Reserve memory to avoid frequent reallocations
     vertices.reserve(mesh->mNumVertices);
@@ -460,36 +568,39 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
     }
 
     // Process material (only if not OBJ or if OBJ has MTL file)
-    if (mesh->mMaterialIndex >= 0 && (!isObjFile || hasMtlFile)) {
-        aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
+    if (mesh->mMaterialIndex >= 0) {
+        aiMaterial* mat = scene->mMaterials[mesh->mMaterialIndex];
+        matProps = extractMaterialProperties(mat);
 
-        // Load different texture types - limit concurrent loading
-        std::vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, "texture_diffuse");
+        // Extract material properties and pass them to mesh
+        MaterialProperties matProps = extractMaterialProperties(mat);
+
+        // Load textures
+        std::vector<Texture> diffuseMaps = loadMaterialTextures(mat, aiTextureType_DIFFUSE, "texture_diffuse");
         textures.insert(textures.end(), diffuseMaps.begin(), diffuseMaps.end());
 
-        std::vector<Texture> specularMaps = loadMaterialTextures(material, aiTextureType_SPECULAR, "texture_specular");
+        std::vector<Texture> specularMaps = loadMaterialTextures(mat, aiTextureType_SPECULAR, "texture_specular");
         textures.insert(textures.end(), specularMaps.begin(), specularMaps.end());
 
-        std::vector<Texture> normalMaps = loadMaterialTextures(material, aiTextureType_HEIGHT, "texture_normal");
+        std::vector<Texture> normalMaps = loadMaterialTextures(mat, aiTextureType_HEIGHT, "texture_normal");
         textures.insert(textures.end(), normalMaps.begin(), normalMaps.end());
 
-        std::vector<Texture> heightMaps = loadMaterialTextures(material, aiTextureType_AMBIENT, "texture_height");
-        textures.insert(textures.end(), heightMaps.begin(), heightMaps.end());
-
-        std::vector<Texture> emissionMaps = loadMaterialTextures(material, aiTextureType_EMISSIVE, "texture_emission");
-        textures.insert(textures.end(), emissionMaps.begin(), emissionMaps.end());
-
-        std::vector<Texture> roughnessMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE_ROUGHNESS, "texture_roughness");
+        // PBR textures
+        std::vector<Texture> roughnessMaps = loadMaterialTextures(mat, aiTextureType_DIFFUSE_ROUGHNESS, "texture_roughness");
         textures.insert(textures.end(), roughnessMaps.begin(), roughnessMaps.end());
 
-        std::vector<Texture> metallicMaps = loadMaterialTextures(material, aiTextureType_METALNESS, "texture_metallic");
+        std::vector<Texture> metallicMaps = loadMaterialTextures(mat, aiTextureType_METALNESS, "texture_metallic");
         textures.insert(textures.end(), metallicMaps.begin(), metallicMaps.end());
 
-        std::vector<Texture> aoMaps = loadMaterialTextures(material, aiTextureType_AMBIENT_OCCLUSION, "texture_ao");
+        std::vector<Texture> emissionMaps = loadMaterialTextures(mat, aiTextureType_EMISSIVE, "texture_emission");
+        textures.insert(textures.end(), emissionMaps.begin(), emissionMaps.end());
+
+        std::vector<Texture> aoMaps = loadMaterialTextures(mat, aiTextureType_AMBIENT_OCCLUSION, "texture_ao");
         textures.insert(textures.end(), aoMaps.begin(), aoMaps.end());
     }
 
-    return Mesh(vertices, indices, textures);
+    return Mesh(vertices, indices, textures, matProps);
+
 }
 
 std::vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType type, std::string typeName) {

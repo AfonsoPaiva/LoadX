@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
+#include "materialprop.h"
 
 struct Vertex {
     glm::vec3 Position;
@@ -22,10 +23,11 @@ public:
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
     std::vector<Texture> textures;
+    MaterialProperties materialProps;
 
     unsigned int VAO;
 
-    Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std::vector<Texture> textures);
+    Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std::vector<Texture> textures, MaterialProperties matProps = MaterialProperties{});
     void Draw(unsigned int shaderProgram);
 
 private:
