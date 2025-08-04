@@ -38,6 +38,7 @@ namespace UI {
     std::string selectedTextureFolder;
     bool textureFolderSelected = false;
     bool reloadModelWithMtl = false;
+    bool flipUVCoordinates = false;
 
     // Debug console data
     static std::deque<std::string> debugMessages;
@@ -259,7 +260,7 @@ namespace UI {
 
         ImGui::Text("Model File:");
         if (ImGui::Button("Select Model File", ImVec2(-1, 25)))
-            ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose Model File", ".OBJ,.obj,.fbx,.gltf,.glb,.3ds,.dae,.blend,.x3d,.ply,.stl");
+            ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose Model File", ".OBJ,.obj,.fbx,.gltf,.glb,.3ds,.dae,.x3d,.ply,.stl");
 
         if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {
             if (ImGuiFileDialog::Instance()->IsOk()) {
@@ -563,6 +564,35 @@ namespace UI {
                     else {
                         ImGui::TextColored(ImVec4(0, 0.8f, 1, 1), "Non-OBJ Model (materials embedded)");
                     }
+
+                    ImGui::Separator();
+
+                    // UV Flip Controls - ADDED
+                    ImGui::Text("UV Coordinate Controls");
+                    ImGui::Separator();
+
+                    // Show current UV state
+                    if (currentModel->IsUVFlipped()) {
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "UV Status: FLIPPED");
+                    }
+                    else {
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "UV Status: NORMAL");
+                    }
+
+                    // UV Flip button
+                    if (ImGui::Button("Flip UV Y-Coordinates", ImVec2(-1, 35))) {
+                        flipUVCoordinates = true;
+                        AddDebugMessage("UV flip requested");
+                    }
+
+                    ImGui::Separator();
+
+                    // UV Debug information
+                    ImGui::Text("UV Debugging Info:");
+                    ImGui::BulletText("Use this if textures appear upside down");
+                    ImGui::BulletText("GLTF/GLB usually don't need flipping");
+                    ImGui::BulletText("OBJ/FBX often need UV flipping");
+                    ImGui::BulletText("Toggle to test different orientations");
 
                     ImGui::Separator();
 

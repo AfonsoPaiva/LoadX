@@ -22,7 +22,6 @@ struct MaterialTextures {
     std::vector<Texture> baseColor;
 };
 
-
 class Model {
 public:
     Model(const std::string& path, const std::string& mtlPath = "");
@@ -43,7 +42,7 @@ public:
     bool IsLoading() const { return isLoading; }
     float GetLoadingProgress() const { return loadingProgress; }
 
-    // UV debugging
+    // UV debugging - ADDED: UV flip functionality
     void FlipUVCoordinates();
     void SetUVFlipped(bool flipped) { uvFlipped = flipped; }
     bool IsUVFlipped() const { return uvFlipped; }

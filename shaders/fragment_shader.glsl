@@ -101,6 +101,14 @@ void main()
     float metallic = material.hasMetallic ? texture(material.texture_metallic1, TexCoords).r : material.metallic;
     float ao = material.hasAO ? texture(material.texture_ao1, TexCoords).r : 1.0;
     
+    // Ensure we have reasonable values
+    if (length(albedo) < 0.01) {
+        albedo = vec3(0.8); // Default fallback
+    }
+    if (length(specularColor) < 0.01) {
+        specularColor = vec3(0.04); // Default F0
+    }
+    
     // Calculate normal (either from normal map or interpolated normal)
     vec3 normal = material.hasNormal ? getNormalFromMap() : normalize(Normal);
     
@@ -126,16 +134,22 @@ void main()
     // Add emission
     result += emission;
     
+    // If no lights are enabled OR result is too dark, use basic ambient lighting
+    if (!dirLightEnabled && !pointLightEnabled && !spotLightEnabled) {
+        result = albedo * 0.3;
+    }
+    
+    // Emergency fallback to prevent completely black models
+    if (length(result) < 0.01) {
+        result = albedo * 0.2;
+    }
+    
     // Apply ambient occlusion
     result *= ao;
     
-    // If no lights are enabled, use basic ambient lighting
-    if (!dirLightEnabled && !pointLightEnabled && !spotLightEnabled) {
-        result = albedo * 0.1 * ao;
-    }
-    
     FragColor = vec4(result, 1.0);
 }
+
 
 vec3 getNormalFromMap()
 {
@@ -153,10 +167,10 @@ vec3 CalcDirLight(DirectionalLight light, vec3 normal, vec3 viewDir, vec3 albedo
     
     // Specular shading (Blinn-Phong)
     vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), material.shininess * (1.0 - roughness));
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), max(material.shininess * (1.0 - roughness), 1.0));
     
-    // Combine results
-    vec3 ambient = light.ambient * albedo * material.ambient;
+    // Combine results - REMOVED material.ambient multiplication
+    vec3 ambient = light.ambient * albedo;  // FIXED: No material.ambient
     vec3 diffuse = light.diffuse * diff * albedo;
     vec3 specular = light.specular * spec * specularColor;
     
@@ -177,14 +191,14 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
     
     // Specular shading (Blinn-Phong)
     vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), material.shininess * (1.0 - roughness));
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), max(material.shininess * (1.0 - roughness), 1.0));
     
     // Attenuation
     float distance = length(light.position - fragPos);
     float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));    
     
-    // Combine results
-    vec3 ambient = light.ambient * albedo * material.ambient;
+    // Combine results - REMOVED material.ambient multiplication
+    vec3 ambient = light.ambient * albedo;  // FIXED: No material.ambient
     vec3 diffuse = light.diffuse * diff * albedo;
     vec3 specular = light.specular * spec * specularColor;
     
@@ -209,7 +223,7 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
     
     // Specular shading (Blinn-Phong)
     vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), material.shininess * (1.0 - roughness));
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), max(material.shininess * (1.0 - roughness), 1.0));
     
     // Attenuation
     float distance = length(light.position - fragPos);
@@ -220,8 +234,8 @@ vec3 CalcSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec
     float epsilon = light.cutOff - light.outerCutOff;
     float intensity = clamp((theta - light.outerCutOff) / epsilon, 0.0, 1.0);
     
-    // Combine results
-    vec3 ambient = light.ambient * albedo * material.ambient;
+    // Combine results - REMOVED material.ambient multiplication
+    vec3 ambient = light.ambient * albedo;  // FIXED: No material.ambient
     vec3 diffuse = light.diffuse * diff * albedo;
     vec3 specular = light.specular * spec * specularColor;
     

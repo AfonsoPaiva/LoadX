@@ -305,6 +305,8 @@ int main() {
             UI::modelSelected = false;
         }
 
+
+
         // Handle MTL file loading for existing OBJ model
         if (UI::reloadModelWithMtl && currentModel) {
             try {
@@ -338,6 +340,14 @@ int main() {
             UI::textureFolderSelected = false;
         }
 
+        // Handle UV coordinate flipping
+        if (UI::flipUVCoordinates && currentModel) {
+            std::cout << "Flipping UV coordinates..." << std::endl;
+            currentModel->FlipUVCoordinates();
+            UI::flipUVCoordinates = false;
+            std::cout << "UV coordinates flipped. Current state: " << (currentModel->IsUVFlipped() ? "Flipped" : "Normal") << std::endl;
+        }
+
         // Handle screenshot
         if (UI::takeScreenshot) {
             // Clear screen and render scene without UI
@@ -352,6 +362,22 @@ int main() {
             }
 
             UI::takeScreenshot = false;
+        }
+
+        // Handle UV coordinate flipping
+        if (UI::flipUVCoordinates && currentModel) {
+            std::cout << "Flipping UV coordinates..." << std::endl;
+            currentModel->FlipUVCoordinates();
+            UI::flipUVCoordinates = false;
+            std::cout << "UV coordinates flipped. Current state: " << (currentModel->IsUVFlipped() ? "Flipped" : "Normal") << std::endl;
+        }
+
+        // Handle texture folder loading
+        if (UI::textureFolderSelected && currentModel) {
+            std::cout << "Loading textures from folder: " << UI::selectedTextureFolder << std::endl;
+            currentModel->LoadTexturesFromFolder(UI::selectedTextureFolder);
+            UI::textureUpdated = true;
+            UI::textureFolderSelected = false;
         }
 
         // Normal rendering

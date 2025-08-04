@@ -34,4 +34,5 @@ namespace UI {
     extern std::string selectedTextureFolder;
     extern bool textureFolderSelected;
     extern bool reloadModelWithMtl;
+    extern bool flipUVCoordinates; 
 }
