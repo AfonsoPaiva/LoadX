@@ -5,18 +5,24 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <thread>
+#include <chrono>
 #include "render.h"
 #include "window.h"
 #include "ui.h"
 #include "model.h"
 #include "Camera.h"
 #include "Transform.h"
+#include "Grid.h"
 #include "Screenshot.h"
 
+// Global objects
 Model* currentModel = nullptr;
 unsigned int shaderProgram;
-Camera camera(glm::vec3(0.0f, 0.0f, 5.0f));
+unsigned int gridShaderProgram;
+Camera camera(glm::vec3(0.0f, 2.0f, 5.0f));
 Transform modelTransform;
+Grid* grid;
 
 // Timing
 float deltaTime = 0.0f;
@@ -67,21 +73,34 @@ protected:
 
 static DebugBuffer debugBuffer;
 
-// Mouse callback
+// Function prototypes
+void handleModelOperations();
+void loadNewModel();
+std::string detectMtlFile();
+void reloadModelWithMtl();
+void loadTexturesFromFolder();
+void flipModelUVCoordinates();
+void takeScreenshotNow();
+void renderGrid();
+void renderScene();
+void cleanup();
+std::string loadShaderFromFile(const std::string& path);
+unsigned int compileShader(const std::string& source, unsigned int type);
+unsigned int createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath);
+
+// Callback functions
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (UI::cameraMovementEnabled) {
         camera.HandleMouseInput(window, xpos, ypos);
     }
 }
 
-// Scroll callback
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
     if (UI::cameraMovementEnabled) {
         camera.ProcessMouseScroll(yoffset);
     }
 }
 
-// Window resize callback
 void window_size_callback(GLFWwindow* window, int width, int height) {
     SCR_WIDTH = width;
     SCR_HEIGHT = height;
@@ -115,6 +134,7 @@ void processInput(GLFWwindow* window) {
     f12WasPressed = f12IsPressed;
 }
 
+// Shader utilities
 std::string loadShaderFromFile(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -160,6 +180,11 @@ unsigned int createShaderProgram(const std::string& vertexPath, const std::strin
     unsigned int vs = compileShader(vertexCode, GL_VERTEX_SHADER);
     unsigned int fs = compileShader(fragmentCode, GL_FRAGMENT_SHADER);
 
+    if (vs == 0 || fs == 0) {
+        glDeleteProgram(program);
+        return 0;
+    }
+
     glAttachShader(program, vs);
     glAttachShader(program, fs);
     glLinkProgram(program);
@@ -170,6 +195,8 @@ unsigned int createShaderProgram(const std::string& vertexPath, const std::strin
         char infoLog[512];
         glGetProgramInfoLog(program, 512, nullptr, infoLog);
         std::cerr << "Shader program linking failed:\n" << infoLog << std::endl;
+        glDeleteProgram(program);
+        program = 0;
     }
 
     glDeleteShader(vs);
@@ -178,38 +205,207 @@ unsigned int createShaderProgram(const std::string& vertexPath, const std::strin
     return program;
 }
 
-void renderScene() {
-    if (currentModel) {
-        glUseProgram(shaderProgram);
+// Model operation handlers
+void handleModelOperations() {
+    if (UI::modelSelected) {
+        loadNewModel();
+        UI::modelSelected = false;
+    }
 
-        // Use centered model matrix if model has bounds calculated
-        glm::mat4 model;
-        if (currentModel->GetModelSize() != glm::vec3(0.0f)) {
-            model = modelTransform.GetModelMatrix(currentModel->GetModelCenter());
-        }
-        else {
-            model = modelTransform.GetModelMatrix();
-        }
+    if (UI::reloadModelWithMtl && currentModel) {
+        reloadModelWithMtl();
+        UI::reloadModelWithMtl = false;
+    }
 
-        // Camera/View transformation
-        glm::mat4 view = camera.GetViewMatrix();
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
-            (float)SCR_WIDTH / (float)SCR_HEIGHT,
-            0.1f, 100.0f);
+    if (UI::textureFolderSelected && currentModel) {
+        loadTexturesFromFolder();
+        UI::textureFolderSelected = false;
+    }
 
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
-        glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(camera.Position));
-
-        Render::UpdateShaderLighting(shaderProgram);
-        currentModel->Draw(shaderProgram);
+    if (UI::flipUVCoordinates && currentModel) {
+        flipModelUVCoordinates();
+        UI::flipUVCoordinates = false;
     }
 }
 
+void loadNewModel() {
+    if (currentModel) {
+        delete currentModel;
+        currentModel = nullptr;
+    }
+
+    try {
+        std::cout << "Loading model: " << UI::selectedModelPath << std::endl;
+        UI::UpdateModelLoadingProgress(0.0f, "Initializing...");
+
+        // Auto-detect MTL file
+        std::string mtlPath = detectMtlFile();
+
+        UI::UpdateModelLoadingProgress(0.2f, "Loading model data...");
+        currentModel = new Model(UI::selectedModelPath, mtlPath);
+
+        // Auto-size model
+        modelTransform.position = glm::vec3(0.0f);
+        modelTransform.rotation = glm::vec3(0.0f);
+        modelTransform.scale = glm::vec3(currentModel->GetRecommendedScale());
+
+        UI::UpdateModelLoadingProgress(1.0f, "Complete!");
+        std::cout << "Model loaded successfully. Applied scale: " << currentModel->GetRecommendedScale() << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Failed to load model: " << e.what() << std::endl;
+        UI::UpdateModelLoadingProgress(1.0f, "Failed!");
+        UI::AddDebugMessage("Model loading failed: " + std::string(e.what()));
+    }
+}
+
+std::string detectMtlFile() {
+    if (UI::selectedModelPath.find(".obj") == std::string::npos) {
+        return "";
+    }
+
+    std::string basePath = UI::selectedModelPath.substr(0, UI::selectedModelPath.find_last_of('.'));
+    std::string autoMtlPath = basePath + ".mtl";
+
+    std::ifstream mtlFile(autoMtlPath);
+    if (mtlFile.good()) {
+        UI::selectedMtlPath = autoMtlPath;
+        std::cout << "Auto-detected MTL file: " << autoMtlPath << std::endl;
+        mtlFile.close();
+        return autoMtlPath;
+    }
+    mtlFile.close();
+    return "";
+}
+
+void reloadModelWithMtl() {
+    try {
+        std::cout << "Reloading model with MTL file: " << UI::selectedMtlPath << std::endl;
+        UI::UpdateModelLoadingProgress(0.0f, "Reloading with MTL...");
+
+        delete currentModel;
+        currentModel = new Model(UI::selectedModelPath, UI::selectedMtlPath);
+
+        // Preserve current transform if it's not default
+        float recommendedScale = currentModel->GetRecommendedScale();
+        if (modelTransform.scale.x == 1.0f && modelTransform.scale.y == 1.0f && modelTransform.scale.z == 1.0f) {
+            modelTransform.scale = glm::vec3(recommendedScale);
+        }
+
+        UI::UpdateModelLoadingProgress(1.0f, "MTL Reload Complete!");
+        std::cout << "Model reloaded with MTL file successfully" << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Failed to reload model with MTL: " << e.what() << std::endl;
+        UI::UpdateModelLoadingProgress(1.0f, "MTL Reload Failed!");
+        UI::AddDebugMessage("MTL reload failed: " + std::string(e.what()));
+    }
+}
+
+void loadTexturesFromFolder() {
+    std::cout << "Loading textures from folder: " << UI::selectedTextureFolder << std::endl;
+    currentModel->LoadTexturesFromFolder(UI::selectedTextureFolder);
+    UI::textureUpdated = true;
+    UI::AddDebugMessage("Textures loaded from folder: " + UI::selectedTextureFolder);
+}
+
+void flipModelUVCoordinates() {
+    std::cout << "Flipping UV coordinates..." << std::endl;
+    currentModel->FlipUVCoordinates();
+    std::cout << "UV coordinates flipped. Current state: "
+        << (currentModel->IsUVFlipped() ? "Flipped" : "Normal") << std::endl;
+    UI::AddDebugMessage("UV coordinates flipped to: " + std::string(currentModel->IsUVFlipped() ? "Flipped" : "Normal"));
+}
+
+void takeScreenshotNow() {
+    // Render scene without UI for clean screenshot
+    Render::ClearScreen();
+    renderGrid();
+    renderScene();
+
+    std::string filename = Screenshot::GenerateScreenshotFilename();
+    if (Screenshot::SaveScreenshot(filename, SCR_WIDTH, SCR_HEIGHT)) {
+        std::cout << "Screenshot saved: " << filename << std::endl;
+        UI::AddDebugMessage("Screenshot saved: " + filename);
+    }
+    else {
+        UI::AddDebugMessage("Failed to save screenshot");
+    }
+}
+
+void renderGrid() {
+    glUseProgram(gridShaderProgram);
+    glm::mat4 view = camera.GetViewMatrix();
+    glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+        (float)SCR_WIDTH / (float)SCR_HEIGHT,
+        0.1f, 100.0f);
+    grid->Draw(gridShaderProgram, view, projection);
+}
+
+void renderScene() {
+    if (!currentModel) return;
+
+    glUseProgram(shaderProgram);
+
+    // Use centered model matrix if model has bounds calculated
+    glm::mat4 model;
+    if (currentModel->GetModelSize() != glm::vec3(0.0f)) {
+        model = modelTransform.GetModelMatrix(currentModel->GetModelCenter());
+    }
+    else {
+        model = modelTransform.GetModelMatrix();
+    }
+
+    // Camera/View transformation
+    glm::mat4 view = camera.GetViewMatrix();
+    glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
+        (float)SCR_WIDTH / (float)SCR_HEIGHT,
+        0.1f, 100.0f);
+
+    // Set shader uniforms
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
+    glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"), 1, glm::value_ptr(camera.Position));
+
+    Render::UpdateShaderLighting(shaderProgram);
+    currentModel->Draw(shaderProgram);
+}
+
+void cleanup() {
+    std::cout << "Shutting down engine..." << std::endl;
+
+    if (currentModel) {
+        delete currentModel;
+        currentModel = nullptr;
+    }
+
+    if (grid) {
+        delete grid;
+        grid = nullptr;
+    }
+
+    if (shaderProgram != 0) {
+        glDeleteProgram(shaderProgram);
+        shaderProgram = 0;
+    }
+
+    if (gridShaderProgram != 0) {
+        glDeleteProgram(gridShaderProgram);
+        gridShaderProgram = 0;
+    }
+
+    UI::Shutdown();
+    Window::Shutdown();
+
+    std::cout << "Engine shutdown complete" << std::endl;
+}
+
+// Main function
 int main() {
     std::cout << "Initializing OpenGL Modular Engine..." << std::endl;
 
+    // Initialize window system
     Window::Init();
 
     // Set callbacks
@@ -221,30 +417,40 @@ int main() {
     // Get actual window size
     Window::GetWindowSize(SCR_WIDTH, SCR_HEIGHT);
 
+    // Initialize UI system
     UI::Init(window);
 
+    // Enable depth testing
     glEnable(GL_DEPTH_TEST);
 
-    std::cout << "Creating shader program..." << std::endl;
+    // Compile shaders
+    std::cout << "Creating shader programs..." << std::endl;
+
     shaderProgram = createShaderProgram("shaders/vertex_shader.glsl", "shaders/fragment_shader.glsl");
-    if (shaderProgram == 0) {
-        std::cerr << "Failed to create shader program!" << std::endl;
+    gridShaderProgram = createShaderProgram("shaders/grid_vertex.glsl", "shaders/grid_fragment.glsl");
+
+    if (shaderProgram == 0 || gridShaderProgram == 0) {
+        std::cerr << "Failed to create shader programs!" << std::endl;
+        cleanup();
         return -1;
     }
-    std::cout << "Shader program created successfully" << std::endl;
+
+    // Initialize grid
+    grid = new Grid();
 
     std::cout << "Engine initialization complete. Ready for use." << std::endl;
 
+    // Main render loop
     while (!Window::ShouldClose()) {
         // Calculate delta time
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        // Update UI stats with current frame performance
+        // Update UI stats
         UI::UpdateStats(deltaTime);
 
-        // Input
+        // Process input
         processInput(window);
         Window::PollEvents();
 
@@ -254,134 +460,18 @@ int main() {
             UI::resetCameraPosition = false;
         }
 
-        // Handle model loading
-        if (UI::modelSelected) {
-            if (currentModel) delete currentModel;
-            try {
-                std::cout << "Loading model: " << UI::selectedModelPath << std::endl;
-                UI::UpdateModelLoadingProgress(0.0f, "Initializing...");
-
-                // Auto-detect MTL file if not explicitly provided
-                std::string mtlPath = "";
-                if (UI::selectedModelPath.find(".obj") != std::string::npos) {
-                    UI::UpdateModelLoadingProgress(0.1f, "Detecting MTL file...");
-
-                    // Try to find MTL file in same directory
-                    std::string objPath = UI::selectedModelPath;
-                    std::string basePath = objPath.substr(0, objPath.find_last_of('.'));
-                    std::string autoMtlPath = basePath + ".mtl";
-
-                    std::ifstream mtlFile(autoMtlPath);
-                    if (mtlFile.good()) {
-                        mtlPath = autoMtlPath;
-                        UI::selectedMtlPath = autoMtlPath;
-                        std::cout << "Auto-detected MTL file: " << autoMtlPath << std::endl;
-                    }
-                    mtlFile.close();
-                }
-
-                UI::UpdateModelLoadingProgress(0.2f, "Loading model data...");
-                currentModel = new Model(UI::selectedModelPath, mtlPath);
-
-                UI::UpdateModelLoadingProgress(0.8f, "Calculating bounds...");
-
-                // Reset transform and apply recommended scale for reasonable size
-                modelTransform.position = glm::vec3(0.0f, 0.0f, 0.0f);
-                modelTransform.rotation = glm::vec3(0.0f, 0.0f, 0.0f);
-
-                // Apply recommended scale for automatic sizing
-                float recommendedScale = currentModel->GetRecommendedScale();
-                modelTransform.scale = glm::vec3(recommendedScale);
-
-                UI::UpdateModelLoadingProgress(1.0f, "Complete!");
-
-                std::cout << "Model loaded successfully: " << UI::selectedModelPath << std::endl;
-                std::cout << "Applied automatic scale: " << recommendedScale << std::endl;
-            }
-            catch (const std::exception& e) {
-                std::cerr << "Failed to load model: " << e.what() << std::endl;
-                UI::UpdateModelLoadingProgress(1.0f, "Failed!");
-            }
-            UI::modelSelected = false;
-        }
-
-
-
-        // Handle MTL file loading for existing OBJ model
-        if (UI::reloadModelWithMtl && currentModel) {
-            try {
-                std::cout << "Reloading model with MTL file: " << UI::selectedMtlPath << std::endl;
-                UI::UpdateModelLoadingProgress(0.0f, "Reloading with MTL...");
-
-                if (currentModel) delete currentModel;
-                currentModel = new Model(UI::selectedModelPath, UI::selectedMtlPath);
-
-                // Preserve current transform
-                float recommendedScale = currentModel->GetRecommendedScale();
-                if (modelTransform.scale.x == 1.0f && modelTransform.scale.y == 1.0f && modelTransform.scale.z == 1.0f) {
-                    modelTransform.scale = glm::vec3(recommendedScale);
-                }
-
-                UI::UpdateModelLoadingProgress(1.0f, "MTL Reload Complete!");
-                std::cout << "Model reloaded with MTL file: " << UI::selectedMtlPath << std::endl;
-            }
-            catch (const std::exception& e) {
-                std::cerr << "Failed to reload model with MTL: " << e.what() << std::endl;
-                UI::UpdateModelLoadingProgress(1.0f, "MTL Reload Failed!");
-            }
-            UI::reloadModelWithMtl = false;
-        }
-
-        // Handle texture folder loading
-        if (UI::textureFolderSelected && currentModel) {
-            std::cout << "Loading textures from folder: " << UI::selectedTextureFolder << std::endl;
-            currentModel->LoadTexturesFromFolder(UI::selectedTextureFolder);
-            UI::textureUpdated = true;
-            UI::textureFolderSelected = false;
-        }
-
-        // Handle UV coordinate flipping
-        if (UI::flipUVCoordinates && currentModel) {
-            std::cout << "Flipping UV coordinates..." << std::endl;
-            currentModel->FlipUVCoordinates();
-            UI::flipUVCoordinates = false;
-            std::cout << "UV coordinates flipped. Current state: " << (currentModel->IsUVFlipped() ? "Flipped" : "Normal") << std::endl;
-        }
+        // Handle all model operations
+        handleModelOperations();
 
         // Handle screenshot
         if (UI::takeScreenshot) {
-            // Clear screen and render scene without UI
-            Render::ClearScreen();
-            renderScene();
-
-            // Take screenshot before rendering UI
-            std::string filename = Screenshot::GenerateScreenshotFilename();
-            bool success = Screenshot::SaveScreenshot(filename, SCR_WIDTH, SCR_HEIGHT);
-            if (success) {
-                std::cout << "Screenshot saved: " << filename << std::endl;
-            }
-
+            takeScreenshotNow();
             UI::takeScreenshot = false;
         }
 
-        // Handle UV coordinate flipping
-        if (UI::flipUVCoordinates && currentModel) {
-            std::cout << "Flipping UV coordinates..." << std::endl;
-            currentModel->FlipUVCoordinates();
-            UI::flipUVCoordinates = false;
-            std::cout << "UV coordinates flipped. Current state: " << (currentModel->IsUVFlipped() ? "Flipped" : "Normal") << std::endl;
-        }
-
-        // Handle texture folder loading
-        if (UI::textureFolderSelected && currentModel) {
-            std::cout << "Loading textures from folder: " << UI::selectedTextureFolder << std::endl;
-            currentModel->LoadTexturesFromFolder(UI::selectedTextureFolder);
-            UI::textureUpdated = true;
-            UI::textureFolderSelected = false;
-        }
-
-        // Normal rendering
+        // Render scene
         Render::ClearScreen();
+        renderGrid();
         renderScene();
 
         // Render UI
@@ -392,12 +482,7 @@ int main() {
         Window::SwapBuffers();
     }
 
-    std::cout << "Shutting down engine..." << std::endl;
-    if (currentModel) delete currentModel;
-    glDeleteProgram(shaderProgram);
-    UI::Shutdown();
-    Window::Shutdown();
-    std::cout << "Engine shutdown complete" << std::endl;
-
+    // Cleanup and exit
+    cleanup();
     return 0;
 }

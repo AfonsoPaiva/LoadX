@@ -278,32 +278,48 @@ namespace UI {
         // Enhanced loading progress display
         if (isModelLoading || (currentModel && currentModel->IsLoading())) {
             ImGui::Separator();
-            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Loading Model...");
+
+            // Make the loading text more prominent
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+            ImGui::Text("Loading Model...");
+            ImGui::PopStyleColor();
 
             float progress = currentModel ? currentModel->GetLoadingProgress() : modelLoadingProgress;
 
-            // Progress bar with custom colors
+            // Enhanced progress bar with custom styling
             ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
-            ImGui::ProgressBar(progress, ImVec2(-1, 20), "");
-            ImGui::PopStyleColor();
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogramHovered, ImVec4(0.3f, 0.9f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
 
-            // Progress text overlay
-            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+            // Make the progress bar larger and more visible
+            ImGui::ProgressBar(progress, ImVec2(-1, 30), "");
+            ImGui::PopStyleColor(3);
+
+            // Progress percentage overlay - centered on the progress bar
+            ImGui::SameLine(ImGui::GetWindowWidth() * 0.5f - 20.0f);
             ImGui::Text("%.1f%%", progress * 100.0f);
 
-            // Loading stage and time
+            // Loading stage information
             if (!modelLoadingStage.empty()) {
-                ImGui::Text("Stage: %s", modelLoadingStage.c_str());
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Stage: %s", modelLoadingStage.c_str());
             }
 
-            ImGui::Text("Time: %.2fs", modelLoadElapsedTime);
+            // Elapsed time
+            ImGui::Text("Elapsed: %.2fs", modelLoadElapsedTime);
 
-            // Animated loading indicator
+            // Animated loading spinner
             const char* loadingChars = "|/-\\";
             static int loadingFrame = 0;
-            loadingFrame = (loadingFrame + 1) % 4;
+            static float lastSpinTime = 0.0f;
+            float currentTime = ImGui::GetTime();
+
+            if (currentTime - lastSpinTime > 0.1f) { // Update every 100ms
+                loadingFrame = (loadingFrame + 1) % 4;
+                lastSpinTime = currentTime;
+            }
+
             ImGui::SameLine();
-            ImGui::Text(" %c", loadingChars[loadingFrame]);
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), " %c", loadingChars[loadingFrame]);
         }
 
         ImGui::Separator();

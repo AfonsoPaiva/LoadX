@@ -39,30 +39,16 @@ public:
     bool firstMouse;
     float lastX, lastY;
 
-    // Constructor with vectors
     Camera(glm::vec3 position = glm::vec3(0.0f, 0.0f, 3.0f),
         glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f),
         float yaw = YAW, float pitch = PITCH);
-
-    // Returns the view matrix calculated using Euler Angles and the LookAt Matrix
     glm::mat4 GetViewMatrix();
-
-    // Processes input received from any keyboard-like input system
     void ProcessKeyboard(Camera_Movement direction, float deltaTime);
-
-    // Processes input received from a mouse input system
     void ProcessMouseMovement(float xoffset, float yoffset, bool constrainPitch = true);
-
-    // Processes input received from a mouse scroll-wheel event
     void ProcessMouseScroll(float yoffset);
-
-    // Handle mouse input for camera rotation
     void HandleMouseInput(GLFWwindow* window, double xpos, double ypos);
-
-    // Reset camera to default position and orientation
     void ResetToDefault();
 
 private:
-    // Calculates the front vector from the Camera's (updated) Euler Angles
     void updateCameraVectors();
 };

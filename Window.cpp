@@ -78,10 +78,6 @@ void Window::SwapBuffers() {
     glfwSwapBuffers(window);
 }
 
-void Window::ProcessInput() {
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
-}
 
 bool Window::ShouldClose() {
     return glfwWindowShouldClose(window);

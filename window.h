@@ -7,7 +7,6 @@ namespace Window {
     void Shutdown();
     void PollEvents();
     void SwapBuffers();
-    void ProcessInput();
     bool ShouldClose();
     GLFWwindow* GetGLFWWindow();
     void GetWindowSize(int& width, int& height);
