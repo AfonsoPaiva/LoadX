@@ -182,6 +182,9 @@
     <ClInclude Include="Model.h" />
     <ClInclude Include="Objloader.h" />
     <ClInclude Include="render.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="resource1.h" />
+    <ClInclude Include="resource2.h" />
     <ClInclude Include="Screenshot.h" />
     <ClInclude Include="Transform.h" />
     <ClInclude Include="ui.h" />
@@ -189,6 +192,12 @@
   </ItemGroup>
   <ItemGroup>
     <Library Include="dependencies\lib\glfw3.lib" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Resource.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\LoadX.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

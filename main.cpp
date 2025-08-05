@@ -16,6 +16,10 @@
 #include "Grid.h"
 #include "Screenshot.h"
 
+#ifdef _WIN32
+#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+#endif
+
 // Global objects
 Model* currentModel = nullptr;
 unsigned int shaderProgram;
@@ -51,9 +55,8 @@ protected:
     virtual int overflow(int c) override {
         if (c != EOF) {
             buffer << static_cast<char>(c);
-            original_cout->sputc(c); // Still output to original console
+            original_cout->sputc(c);
 
-            // If we hit a newline, send the accumulated message to UI
             if (c == '\n') {
                 std::string message = buffer.str();
                 if (!message.empty() && message != "\n") {
@@ -73,7 +76,6 @@ protected:
 
 static DebugBuffer debugBuffer;
 
-// Function prototypes
 void handleModelOperations();
 void loadNewModel();
 std::string detectMtlFile();
@@ -88,7 +90,6 @@ std::string loadShaderFromFile(const std::string& path);
 unsigned int compileShader(const std::string& source, unsigned int type);
 unsigned int createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath);
 
-// Callback functions
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (UI::cameraMovementEnabled) {
         camera.HandleMouseInput(window, xpos, ypos);
@@ -108,12 +109,10 @@ void window_size_callback(GLFWwindow* window, int width, int height) {
     UI::AddDebugMessage("Window resized to " + std::to_string(width) + "x" + std::to_string(height));
 }
 
-// Process input
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    // Only process camera movement if enabled
     if (UI::cameraMovementEnabled) {
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
             camera.ProcessKeyboard(FORWARD, deltaTime);
@@ -125,7 +124,6 @@ void processInput(GLFWwindow* window) {
             camera.ProcessKeyboard(RIGHT, deltaTime);
     }
 
-    // Screenshot hotkey (F12)
     static bool f12WasPressed = false;
     bool f12IsPressed = (glfwGetKey(window, GLFW_KEY_F12) == GLFW_PRESS);
     if (f12IsPressed && !f12WasPressed) {
@@ -134,7 +132,6 @@ void processInput(GLFWwindow* window) {
     f12WasPressed = f12IsPressed;
 }
 
-// Shader utilities
 std::string loadShaderFromFile(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -286,7 +283,6 @@ void reloadModelWithMtl() {
         delete currentModel;
         currentModel = new Model(UI::selectedModelPath, UI::selectedMtlPath);
 
-        // Preserve current transform if it's not default
         float recommendedScale = currentModel->GetRecommendedScale();
         if (modelTransform.scale.x == 1.0f && modelTransform.scale.y == 1.0f && modelTransform.scale.z == 1.0f) {
             modelTransform.scale = glm::vec3(recommendedScale);
@@ -318,7 +314,6 @@ void flipModelUVCoordinates() {
 }
 
 void takeScreenshotNow() {
-    // Render scene without UI for clean screenshot
     Render::ClearScreen();
     renderGrid();
     renderScene();
@@ -347,7 +342,6 @@ void renderScene() {
 
     glUseProgram(shaderProgram);
 
-    // Use centered model matrix if model has bounds calculated
     glm::mat4 model;
     if (currentModel->GetModelSize() != glm::vec3(0.0f)) {
         model = modelTransform.GetModelMatrix(currentModel->GetModelCenter());
@@ -356,13 +350,11 @@ void renderScene() {
         model = modelTransform.GetModelMatrix();
     }
 
-    // Camera/View transformation
     glm::mat4 view = camera.GetViewMatrix();
     glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
         (float)SCR_WIDTH / (float)SCR_HEIGHT,
         0.1f, 100.0f);
 
-    // Set shader uniforms
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, glm::value_ptr(model));
@@ -401,29 +393,22 @@ void cleanup() {
     std::cout << "Engine shutdown complete" << std::endl;
 }
 
-// Main function
 int main() {
     std::cout << "Initializing OpenGL Modular Engine..." << std::endl;
 
-    // Initialize window system
     Window::Init();
 
-    // Set callbacks
     GLFWwindow* window = Window::GetGLFWWindow();
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
     glfwSetWindowSizeCallback(window, window_size_callback);
 
-    // Get actual window size
     Window::GetWindowSize(SCR_WIDTH, SCR_HEIGHT);
 
-    // Initialize UI system
     UI::Init(window);
 
-    // Enable depth testing
     glEnable(GL_DEPTH_TEST);
 
-    // Compile shaders
     std::cout << "Creating shader programs..." << std::endl;
 
     shaderProgram = createShaderProgram("shaders/vertex_shader.glsl", "shaders/fragment_shader.glsl");
@@ -435,46 +420,36 @@ int main() {
         return -1;
     }
 
-    // Initialize grid
     grid = new Grid();
 
     std::cout << "Engine initialization complete. Ready for use." << std::endl;
 
-    // Main render loop
     while (!Window::ShouldClose()) {
-        // Calculate delta time
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        // Update UI stats
         UI::UpdateStats(deltaTime);
 
-        // Process input
         processInput(window);
         Window::PollEvents();
 
-        // Handle camera reset
         if (UI::resetCameraPosition) {
             camera.ResetToDefault();
             UI::resetCameraPosition = false;
         }
 
-        // Handle all model operations
         handleModelOperations();
 
-        // Handle screenshot
         if (UI::takeScreenshot) {
             takeScreenshotNow();
             UI::takeScreenshot = false;
         }
 
-        // Render scene
         Render::ClearScreen();
         renderGrid();
         renderScene();
 
-        // Render UI
         UI::BeginFrame();
         UI::RenderUI(modelTransform, currentModel);
         UI::EndFrame();
@@ -482,7 +457,6 @@ int main() {
         Window::SwapBuffers();
     }
 
-    // Cleanup and exit
     cleanup();
     return 0;
 }

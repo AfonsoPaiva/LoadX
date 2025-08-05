@@ -17,7 +17,7 @@ public:
     glm::mat4 GetModelMatrix() const {
         glm::mat4 model = glm::mat4(1.0f);
 
-        // Apply transformations in order: Scale -> Rotate -> Translate
+        //Scale -> Rotate -> Translate
         model = glm::translate(model, position);
 
         model = glm::rotate(model, glm::radians(rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -33,7 +33,7 @@ public:
     glm::mat4 GetModelMatrix(const glm::vec3& modelCenter) const {
         glm::mat4 model = glm::mat4(1.0f);
 
-        // Apply transformations: Translate to position -> Rotate -> Scale -> Center offset
+        //Translate to position -> Rotate -> Scale -> Center offset
         model = glm::translate(model, position);
 
         model = glm::rotate(model, glm::radians(rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -42,7 +42,7 @@ public:
 
         model = glm::scale(model, scale);
 
-        // Center the model by translating by negative model center
+        //Translating by negative model center
         model = glm::translate(model, -modelCenter);
 
         return model;

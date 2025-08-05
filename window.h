@@ -10,4 +10,7 @@ namespace Window {
     bool ShouldClose();
     GLFWwindow* GetGLFWWindow();
     void GetWindowSize(int& width, int& height);
+#ifdef _WIN32
+    void SetWindowIcon();
+#endif
 }

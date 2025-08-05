@@ -259,7 +259,6 @@ void FastObjLoader::parseFace(const std::string& line) {
         }
     }
 
-    // Triangulate face (fan triangulation for polygons with more than 3 vertices)
     for (size_t i = 1; i < faceIndices.size() - 1; i++) {
         indices.push_back(faceIndices[0]);
         indices.push_back(faceIndices[i]);
@@ -277,7 +276,7 @@ void FastObjLoader::parseFaceWithMaterial(const std::string& line, const std::st
     auto& verts = materialVertices[matKey];
     auto& inds = materialIndices[matKey];
 
-    std::istringstream iss(line.substr(2)); // Skip "f "
+    std::istringstream iss(line.substr(2)); 
     std::string vertexStr;
     std::vector<unsigned int> faceIndices;
 
@@ -315,7 +314,7 @@ Vertex FastObjLoader::getVertex(const std::string& vertexStr) {
     vertex.Tangent = glm::vec3(1.0f, 0.0f, 0.0f);
     vertex.Bitangent = glm::vec3(0.0f, 1.0f, 0.0f);
 
-    // Parse vertex string (format: pos/tex/norm or pos//norm or pos/tex or just pos)
+    // Parse vertex string
     int posIndex = -1, texIndex = -1, normIndex = -1;
 
     const char* str = vertexStr.c_str();
@@ -416,7 +415,7 @@ std::vector<ObjMaterial> FastObjLoader::LoadMTL(const std::string& mtlPath) {
         // Texture maps
         else if (command == "map_Kd") {
             std::getline(iss, currentMaterial.diffuseTexture);
-            currentMaterial.diffuseTexture = currentMaterial.diffuseTexture.substr(1); // Remove leading space
+            currentMaterial.diffuseTexture = currentMaterial.diffuseTexture.substr(1); 
         }
         else if (command == "map_Ks") {
             std::getline(iss, currentMaterial.specularTexture);
@@ -452,7 +451,6 @@ std::vector<ObjMaterial> FastObjLoader::LoadMTL(const std::string& mtlPath) {
         }
     }
 
-    // Don't forget the last material
     if (hasMaterial) {
         materials.push_back(currentMaterial);
         std::cout << "Loaded material: " << currentMaterial.name << std::endl;

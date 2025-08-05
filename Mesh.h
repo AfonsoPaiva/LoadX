@@ -29,7 +29,7 @@ public:
 
     Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std::vector<Texture> textures, MaterialProperties matProps = MaterialProperties{});
     void Draw(unsigned int shaderProgram);
-    void setupMesh(); // ADDED: Make setupMesh public so Model can call it
+    void setupMesh(); 
 
 private:
     unsigned int VBO, EBO;

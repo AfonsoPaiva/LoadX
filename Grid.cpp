@@ -8,7 +8,6 @@
 #include <iostream>
 
 Grid::Grid() {
-    // Create a simple large quad instead of grid lines
     vertices = {
         glm::vec3(-1000.0f, 0.0f, -1000.0f),
         glm::vec3(1000.0f, 0.0f, -1000.0f),
@@ -16,7 +15,6 @@ Grid::Grid() {
         glm::vec3(-1000.0f, 0.0f,  1000.0f)
     };
 
-    // Two triangles to form a quad
     indices = {
         0, 1, 2,
         2, 3, 0
@@ -52,11 +50,10 @@ void Grid::setupMesh() {
 void Grid::Draw(unsigned int shaderProgram, glm::mat4 view, glm::mat4 projection) {
     glUseProgram(shaderProgram);
 
-    // Enable blending for transparency
+    //Blending for transparency
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Set uniforms
     glm::vec3 gridColor(0.5f, 0.5f, 0.5f);
     unsigned int colorLoc = glGetUniformLocation(shaderProgram, "gridColor");
     glUniform3fv(colorLoc, 1, glm::value_ptr(gridColor));

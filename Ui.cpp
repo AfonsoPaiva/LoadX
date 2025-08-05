@@ -10,9 +10,9 @@
 #include <iomanip>
 #include <deque>
 #include <chrono>
-#include <algorithm>  // Add this for std::min, std::max
-#include <vector>     // Add this for std::vector
-#include <cfloat>     // Add this for FLT_MAX
+#include <algorithm>  
+#include <vector>     
+#include <cfloat>    
 #ifdef _WIN32
 #include <windows.h>
 #include <psapi.h>
@@ -253,6 +253,55 @@ namespace UI {
         const float middleColumnWidth = 400.0f;
         const float rightColumnWidth = 350.0f;
 
+        // Customize colors to darker grey theme
+        ImGuiStyle& style = ImGui::GetStyle();
+        ImVec4* colors = style.Colors;
+
+        // Main background colors
+        colors[ImGuiCol_WindowBg] = ImVec4(0.15f, 0.15f, 0.15f, 1.00f);        // Window background
+        colors[ImGuiCol_ChildBg] = ImVec4(0.12f, 0.12f, 0.12f, 1.00f);         // Child window background
+        colors[ImGuiCol_PopupBg] = ImVec4(0.18f, 0.18f, 0.18f, 1.00f);         // Popup background
+
+        // Frame backgrounds (input fields, etc.)
+        colors[ImGuiCol_FrameBg] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f);         // Input field background
+        colors[ImGuiCol_FrameBgHovered] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);  // Input field hovered
+        colors[ImGuiCol_FrameBgActive] = ImVec4(0.35f, 0.35f, 0.35f, 1.00f);   // Input field active
+
+        // Title bar
+        colors[ImGuiCol_TitleBg] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);         // Title bar
+        colors[ImGuiCol_TitleBgActive] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f);   // Active title bar
+        colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.15f, 0.15f, 0.15f, 1.00f); // Collapsed title bar
+
+        // Buttons
+        colors[ImGuiCol_Button] = ImVec4(0.35f, 0.35f, 0.35f, 1.00f);          // Button
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.45f, 0.45f, 0.45f, 1.00f);   // Button hovered
+        colors[ImGuiCol_ButtonActive] = ImVec4(0.55f, 0.55f, 0.55f, 1.00f);    // Button pressed
+
+        // Headers (collapsible sections)
+        colors[ImGuiCol_Header] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);          // Header
+        colors[ImGuiCol_HeaderHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);   // Header hovered
+        colors[ImGuiCol_HeaderActive] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);    // Header active
+
+        // Sliders and progress bars
+        colors[ImGuiCol_SliderGrab] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);      // Slider handle
+        colors[ImGuiCol_SliderGrabActive] = ImVec4(0.70f, 0.70f, 0.70f, 1.00f); // Slider handle active
+        colors[ImGuiCol_PlotHistogram] = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);   // Progress bar fill
+
+        // Tabs
+        colors[ImGuiCol_Tab] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f);             // Tab
+        colors[ImGuiCol_TabHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);      // Tab hovered
+        colors[ImGuiCol_TabActive] = ImVec4(0.35f, 0.35f, 0.35f, 1.00f);       // Active tab
+        colors[ImGuiCol_TabUnfocused] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);    // Unfocused tab
+        colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f); // Unfocused active tab
+
+        // Borders and separators
+        colors[ImGuiCol_Border] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);          // Borders
+        colors[ImGuiCol_Separator] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);       // Separators
+
+        // Text colors
+        colors[ImGuiCol_Text] = ImVec4(0.90f, 0.90f, 0.90f, 1.00f);            // Main text
+        colors[ImGuiCol_TextDisabled] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);    // Disabled text
+
         // Model loading window with enhanced progress bar
         ImGui::SetNextWindowPos(ImVec2(windowPadding, windowPadding), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(leftColumnWidth, 320), ImGuiCond_Always);
@@ -260,7 +309,12 @@ namespace UI {
 
         ImGui::Text("Model File:");
         if (ImGui::Button("Select Model File", ImVec2(-1, 25)))
+        {
+            ImGuiFileDialog::Instance()->SetFileStyle(IGFD_FileStyleByFullName, "", ImVec4(0.7f, 0.9f, 0.7f, 1.0f));
             ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose Model File", ".OBJ,.obj,.fbx,.gltf,.glb,.3ds,.dae,.x3d,.ply,.stl");
+
+        }
+           
 
         if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {
             if (ImGuiFileDialog::Instance()->IsOk()) {

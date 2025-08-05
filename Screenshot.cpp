@@ -19,12 +19,12 @@ namespace Screenshot {
         auto now = std::time(nullptr);
 
 #ifdef _WIN32
-        // Use localtime_s for Windows (safer version)
+        // Use localtime_s for Windows 
         struct tm tm_buf;
         localtime_s(&tm_buf, &now);
         auto tm = tm_buf;
 #else
-        // Use localtime_r for Unix-like systems (safer version)
+        // Use localtime_r for Unix-like systems 
         struct tm tm_buf;
         localtime_r(&now, &tm_buf);
         auto tm = tm_buf;
@@ -50,7 +50,6 @@ namespace Screenshot {
         // Read pixels from framebuffer
         glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels);
 
-        // Check for OpenGL errors
         GLenum error = glGetError();
         if (error != GL_NO_ERROR) {
             std::cerr << "OpenGL error while reading pixels: " << error << std::endl;
@@ -58,7 +57,6 @@ namespace Screenshot {
             return false;
         }
 
-        // Flip image vertically (OpenGL reads from bottom-left, but images are top-left)
         unsigned char* flipped_pixels = new unsigned char[width * height * 3];
         if (!flipped_pixels) {
             std::cerr << "Failed to allocate memory for flipped image" << std::endl;
@@ -74,10 +72,8 @@ namespace Screenshot {
             );
         }
 
-        // Save as PNG
         int result = stbi_write_png(filename.c_str(), width, height, 3, flipped_pixels, width * 3);
 
-        // Cleanup
         delete[] pixels;
         delete[] flipped_pixels;
 

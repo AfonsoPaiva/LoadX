@@ -375,33 +375,31 @@ void Model::loadModel(const std::string& path, const std::string& mtlPath) {
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
         if (ext == "gltf" || ext == "glb") {
-            // GLTF/GLB: DO NOT flip UVs - they already use OpenGL convention
+            // GLTF/GLB
             std::cout << "Detected GLTF/GLB format - preserving original UV coordinates" << std::endl;
             flags |= aiProcess_ValidateDataStructure;
-            // Explicitly NOT adding aiProcess_FlipUVs for GLTF/GLB
         }
         else if (ext == "fbx") {
-            // FBX: Usually needs UV flipping
+            // FBX
             std::cout << "Detected FBX format - applying UV flip" << std::endl;
             flags |= aiProcess_FlipUVs | aiProcess_GlobalScale;
         }
         else if (ext == "dae") {
-            // Collada: Usually needs UV flipping
+            // Collada
             std::cout << "Detected DAE format - applying UV flip" << std::endl;
             flags |= aiProcess_FlipUVs | aiProcess_FixInfacingNormals;
         }
         else if (ext == "3ds") {
-            // 3DS: Usually needs UV flipping
+            // 3DS
             std::cout << "Detected 3DS format - applying UV flip" << std::endl;
             flags |= aiProcess_FlipUVs | aiProcess_OptimizeMeshes;
         }
         else {
-            // Default for unknown formats: apply UV flipping
+            // Default 
             std::cout << "Unknown format - applying default UV flip" << std::endl;
             flags |= aiProcess_FlipUVs;
         }
 
-        // Common optimization flags
         flags |= aiProcess_JoinIdenticalVertices | aiProcess_OptimizeMeshes | aiProcess_RemoveRedundantMaterials;
 
         loadingProgress = 0.1f;
@@ -414,7 +412,6 @@ void Model::loadModel(const std::string& path, const std::string& mtlPath) {
 
         loadingProgress = 0.3f;
 
-        // Handle embedded textures (common in GLB files)
         if (scene->mNumTextures > 0) {
             std::cout << "Found " << scene->mNumTextures << " embedded textures" << std::endl;
         }
@@ -429,11 +426,9 @@ void Model::loadModel(const std::string& path, const std::string& mtlPath) {
 
 
 void Model::processNode(aiNode* node, const aiScene* scene) {
-    // Process all the node's meshes
     for (unsigned int i = 0; i < node->mNumMeshes; i++) {
         aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
 
-        // Update progress
         loadingProgress = (float)meshes.size() / (float)scene->mNumMeshes;
 
         try {
@@ -441,12 +436,10 @@ void Model::processNode(aiNode* node, const aiScene* scene) {
         }
         catch (const std::bad_alloc& e) {
             std::cerr << "Memory allocation failed for mesh " << i << ": " << e.what() << std::endl;
-            // Try to continue with remaining meshes
             continue;
         }
     }
 
-    // Then do the same for each of its children
     for (unsigned int i = 0; i < node->mNumChildren; i++) {
         processNode(node->mChildren[i], scene);
     }
@@ -455,15 +448,12 @@ void Model::processNode(aiNode* node, const aiScene* scene) {
 MaterialProperties Model::extractMaterialProperties(aiMaterial* mat) {
     MaterialProperties props;
 
-    // Get material name
     aiString name;
     mat->Get(AI_MATKEY_NAME, name);
     props.name = name.C_Str();
 
-    // Standard material properties
     aiColor3D color;
 
-    // For GLTF models, use baseColor if available (PRIORITY)
     if (mat->Get(AI_MATKEY_BASE_COLOR, color) == AI_SUCCESS) {
         props.diffuse = glm::vec3(color.r, color.g, color.b);
         std::cout << "Using GLTF base color: " << color.r << ", " << color.g << ", " << color.b << std::endl;
@@ -473,7 +463,7 @@ MaterialProperties Model::extractMaterialProperties(aiMaterial* mat) {
         std::cout << "Using diffuse color: " << color.r << ", " << color.g << ", " << color.b << std::endl;
     }
     else {
-        props.diffuse = glm::vec3(1.0f); // Default white for GLTF
+        props.diffuse = glm::vec3(1.0f); 
         std::cout << "No color found, using default white" << std::endl;
     }
 
@@ -489,26 +479,23 @@ MaterialProperties Model::extractMaterialProperties(aiMaterial* mat) {
         props.emission = glm::vec3(color.r, color.g, color.b);
     }
 
-    // Shininess
     float shininess;
     if (mat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS) {
         props.shininess = shininess;
     }
 
-    // Opacity
     float opacity;
     if (mat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
         props.opacity = opacity;
     }
 
-    // PBR properties (important for GLTF)
     float roughness, metallic;
     if (mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) == AI_SUCCESS) {
         props.roughness = roughness;
         std::cout << "GLTF roughness: " << roughness << std::endl;
     }
     else {
-        props.roughness = 0.5f; // Default for GLTF
+        props.roughness = 0.5f; 
     }
 
     if (mat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS) {
@@ -516,10 +503,9 @@ MaterialProperties Model::extractMaterialProperties(aiMaterial* mat) {
         std::cout << "GLTF metallic: " << metallic << std::endl;
     }
     else {
-        props.metallic = 0.0f; // Default for GLTF
+        props.metallic = 0.0f; 
     }
 
-    // Debug output for GLTF material
     std::cout << "Extracted material: " << props.name
         << " (Diffuse: " << props.diffuse.x << ", " << props.diffuse.y << ", " << props.diffuse.z
         << ", R:" << props.roughness << ", M:" << props.metallic << ")" << std::endl;
@@ -532,7 +518,6 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
     std::vector<Texture> textures;
     MaterialProperties matProps;
 
-    // Reserve memory to avoid frequent reallocations
     vertices.reserve(mesh->mNumVertices);
 
     // Estimate indices count (triangulated mesh = 3 indices per face)
@@ -546,7 +531,6 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
     for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
         Vertex vertex;
 
-        // Process vertex positions, normals and texture coordinates
         glm::vec3 vector;
         vector.x = mesh->mVertices[i].x;
         vector.y = mesh->mVertices[i].y;
@@ -563,15 +547,10 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
             vertex.Normal = glm::vec3(0.0f, 1.0f, 0.0f);
         }
 
-        // FIXED: Proper UV coordinate handling - let Assimp flags handle UV flipping
         if (mesh->mTextureCoords[0]) {
             glm::vec2 vec;
             vec.x = mesh->mTextureCoords[0][i].x;
             vec.y = mesh->mTextureCoords[0][i].y;
-
-            // FIXED: Don't manually flip UVs here - trust Assimp's aiProcess_FlipUVs flag
-            // The UV flipping is handled properly in loadModel() with appropriate flags
-            // No manual flipping needed here
 
             vertex.TexCoords = vec;
         }
@@ -579,7 +558,6 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
             vertex.TexCoords = glm::vec2(0.0f, 0.0f);
         }
 
-        // Tangent and Bitangent (only if available and needed)
         if (mesh->HasTangentsAndBitangents()) {
             vector.x = mesh->mTangents[i].x;
             vector.y = mesh->mTangents[i].y;
@@ -599,7 +577,6 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
         vertices.push_back(vertex);
     }
 
-    // Process indices
     for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
         aiFace face = mesh->mFaces[i];
         for (unsigned int j = 0; j < face.mNumIndices; j++)
@@ -611,9 +588,8 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene) {
         aiMaterial* mat = scene->mMaterials[mesh->mMaterialIndex];
         matProps = extractMaterialProperties(mat);
 
-        // UNIVERSAL texture loading - try all possible texture types for ALL formats
 
-        // 1. DIFFUSE/BASE COLOR (most important)
+        // 1. DIFFUSE/BASE COLOR 
         std::vector<Texture> diffuseMaps;
 
         // Try GLTF base color first
@@ -688,7 +664,6 @@ std::vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType 
 
         std::cout << "Found texture path: " << str.C_Str() << std::endl;
 
-        // Check if texture was loaded before to save performance
         bool skip = false;
         for (unsigned int j = 0; j < textures_loaded.size(); j++) {
             if (std::strcmp(textures_loaded[j].path.data(), str.C_Str()) == 0) {
@@ -700,7 +675,6 @@ std::vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType 
         }
 
         if (!skip) {
-            // If texture hasn't been loaded already, load it
             Texture texture;
             texture.id = TextureFromFile(str.C_Str(), this->directory);
             texture.type = typeName;
@@ -724,15 +698,9 @@ std::vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType 
 unsigned int Model::TextureFromFile(const char* path, const std::string& directory, bool gamma) {
     std::string filename = std::string(path);
 
-    // Check if this is an embedded texture (starts with *)
     if (filename[0] == '*') {
-        // Handle embedded texture
         int textureIndex = std::stoi(filename.substr(1));
         std::cout << "Loading embedded texture index: " << textureIndex << std::endl;
-
-        // For embedded textures, we would need access to the aiScene
-        // This is a limitation of the current architecture
-        // For now, return 0 and handle in loadMaterialTextures
         return 0;
     }
 
@@ -765,7 +733,6 @@ unsigned int Model::TextureFromFile(const char* path, const std::string& directo
 
         file.close();
 
-        // If still not found, return 0
         std::ifstream finalCheck(filename);
         if (!finalCheck.good()) {
             finalCheck.close();
@@ -807,14 +774,11 @@ unsigned int Model::TextureFromFile(const char* path, const std::string& directo
         glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
         glGenerateMipmap(GL_TEXTURE_2D);
 
-        // Standard texture parameters without anisotropic filtering
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-        // REMOVED: Anisotropic filtering (not available in your OpenGL context)
-        // This was causing the GL_EXT_texture_filter_anisotropic errors
 
         stbi_image_free(data);
 
@@ -832,16 +796,12 @@ unsigned int Model::TextureFromFile(const char* path, const std::string& directo
 
 void Model::FlipUVCoordinates() {
     for (auto& mesh : meshes) {
-        // Flip UV coordinates for all vertices in this mesh
         for (auto& vertex : mesh.vertices) {
             vertex.TexCoords.y = 1.0f - vertex.TexCoords.y;
         }
 
-        // Recreate the mesh's VAO with the updated UV coordinates
         mesh.setupMesh();
     }
-
-    // Toggle the UV flipped state
     uvFlipped = !uvFlipped;
 
     std::cout << "UV coordinates " << (uvFlipped ? "flipped" : "restored to original") << std::endl;

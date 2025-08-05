@@ -9,45 +9,36 @@ Mesh::Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std:
 }
 
 void Mesh::setupMesh() {
-    // Create buffers/arrays
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
     glGenBuffers(1, &EBO);
 
     glBindVertexArray(VAO);
 
-    // Load data into vertex buffers
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), &vertices[0], GL_STATIC_DRAW);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), &indices[0], GL_STATIC_DRAW);
 
-    // Set the vertex attribute pointers
-    // Vertex Positions
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
 
-    // Vertex Normals
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
 
-    // Vertex Texture Coords
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
 
-    // Vertex Tangent
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
 
-    // Vertex Bitangent
     glEnableVertexAttribArray(4);
     glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Bitangent));
 
     glBindVertexArray(0);
 }
 void Mesh::Draw(unsigned int shaderProgram) {
-    // Set material properties as uniforms
     glUniform3fv(glGetUniformLocation(shaderProgram, "material.ambient"), 1, &materialProps.ambient[0]);
     glUniform3fv(glGetUniformLocation(shaderProgram, "material.diffuse"), 1, &materialProps.diffuse[0]);
     glUniform3fv(glGetUniformLocation(shaderProgram, "material.specular"), 1, &materialProps.specular[0]);
@@ -57,7 +48,6 @@ void Mesh::Draw(unsigned int shaderProgram) {
     glUniform1f(glGetUniformLocation(shaderProgram, "material.roughness"), materialProps.roughness);
     glUniform1f(glGetUniformLocation(shaderProgram, "material.metallic"), materialProps.metallic);
 
-    // Set texture availability flags (you'll need to implement this logic)
     glUniform1i(glGetUniformLocation(shaderProgram, "material.hasDiffuse"), false);
     glUniform1i(glGetUniformLocation(shaderProgram, "material.hasSpecular"), false);
     glUniform1i(glGetUniformLocation(shaderProgram, "material.hasNormal"), false);
@@ -67,7 +57,6 @@ void Mesh::Draw(unsigned int shaderProgram) {
     glUniform1i(glGetUniformLocation(shaderProgram, "material.hasMetallic"), false);
     glUniform1i(glGetUniformLocation(shaderProgram, "material.hasAO"), false);
 
-    // Bind appropriate textures
     unsigned int diffuseNr = 1;
     unsigned int specularNr = 1;
     unsigned int normalNr = 1;
@@ -116,19 +105,15 @@ void Mesh::Draw(unsigned int shaderProgram) {
             glUniform1i(glGetUniformLocation(shaderProgram, "material.hasAO"), true);
         }
 
-        // Set the sampler to the correct texture unit
         std::string uniformName = "material." + name + number;
         glUniform1i(glGetUniformLocation(shaderProgram, uniformName.c_str()), i);
 
-        // Bind the texture
         glBindTexture(GL_TEXTURE_2D, textures[i].id);
     }
 
-    // Draw mesh
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 
-    // Always good practice to set everything back to defaults once configured.
     glActiveTexture(GL_TEXTURE0);
 }

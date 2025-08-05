@@ -33,7 +33,6 @@ void Camera::ProcessMouseMovement(float xoffset, float yoffset, bool constrainPi
     Yaw += xoffset;
     Pitch += yoffset;
 
-    // Make sure that when pitch is out of bounds, screen doesn't get flipped
     if (constrainPitch) {
         if (Pitch > 89.0f)
             Pitch = 89.0f;
@@ -61,19 +60,18 @@ void Camera::HandleMouseInput(GLFWwindow* window, double xpos, double ypos) {
     }
 
     float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+    float yoffset = lastY - ypos; 
 
     lastX = xpos;
     lastY = ypos;
 
-    // Only process mouse movement if left mouse button is pressed
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
         ProcessMouseMovement(xoffset, yoffset);
     }
 }
 
 void Camera::ResetToDefault() {
-    Position = glm::vec3(0.0f, 0.0f, 5.0f);
+    Position = glm::vec3(0.0f, 2.0f, 5.0f);
     Yaw = YAW;
     Pitch = PITCH;
     Zoom = ZOOM;

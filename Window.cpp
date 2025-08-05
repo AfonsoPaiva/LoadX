@@ -1,8 +1,14 @@
 #include <glad/glad.h>     
 #include <GLFW/glfw3.h>    
-
 #include "window.h"
 #include <iostream>
+
+#ifdef _WIN32
+#include <windows.h>
+#define GLFW_EXPOSE_NATIVE_WIN32 
+#include <GLFW/glfw3native.h>     
+#include "resource.h"
+#endif
 
 static GLFWwindow* window = nullptr;
 static int windowWidth = 1920;
@@ -16,6 +22,14 @@ void framebuffer_size_callback(GLFWwindow*, int width, int height) {
 
 void Window::Init()
 {
+#ifdef _WIN32
+    // Hide console window
+    HWND consoleWindow = GetConsoleWindow();
+    if (consoleWindow != NULL) {
+        ShowWindow(consoleWindow, SW_HIDE);
+    }
+#endif
+
     // ===GLFW Initialization===
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -55,6 +69,11 @@ void Window::Init()
         std::cout << "Failed to initialize GLAD" << std::endl;
         exit(-1);
     }
+    // Set window icon AFTER GLFW window creation
+        #ifdef _WIN32
+            SetWindowIcon();
+        #endif
+
 
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
@@ -64,6 +83,35 @@ void Window::Init()
     // Don't capture cursor by default - let ImGui handle it
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 }
+
+
+#ifdef _WIN32
+void Window::SetWindowIcon() {
+    // Get the Windows handle for the GLFW window
+    HWND hwnd = glfwGetWin32Window(window);
+
+    if (hwnd) {
+        // Load icon from resources
+        HICON hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1));
+
+        if (hIcon) {
+            // Set icon for window title bar (small icon)
+            SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+
+            // Set icon for taskbar and Alt+Tab (large icon)
+            SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+
+            std::cout << "Window icon set successfully from resources" << std::endl;
+        }
+        else {
+            std::cout << "Failed to load icon from resources" << std::endl;
+        }
+    }
+    else {
+        std::cout << "Failed to get Windows handle for GLFW window" << std::endl;
+    }
+}
+#endif
 
 void Window::Shutdown() {
     glfwDestroyWindow(window);

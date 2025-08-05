@@ -42,7 +42,7 @@ public:
     bool IsLoading() const { return isLoading; }
     float GetLoadingProgress() const { return loadingProgress; }
 
-    // UV debugging - ADDED: UV flip functionality
+    // UV debugging
     void FlipUVCoordinates();
     void SetUVFlipped(bool flipped) { uvFlipped = flipped; }
     bool IsUVFlipped() const { return uvFlipped; }
